@@ -38,11 +38,8 @@ jobs:
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
-          # 统一把安装包和图标资源归档到同一个 release 产物。
+          # 只上传用户需要双击运行的安装器，避免把辅助文件误当成安装目录。
           name: hora-windows-${{ matrix.arch }}
           path: |
-            dist-electron/releases/*.exe
-            dist-electron/releases/*.blockmap
-            dist-electron/releases/*.yml
-            dist-electron/releases/icon/**
+            dist-electron/releases/HoraSpace-*.exe
           if-no-files-found: error

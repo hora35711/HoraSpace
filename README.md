@@ -112,9 +112,20 @@ HoraSpace-0.0.1-x64.exe
 HoraSpace-0.0.1-arm64.exe
 ```
 
-Windows 下载后请运行上面的 `HoraSpace-版本-架构.exe` 安装器。安装完成后，安装器会创建桌面快捷方式和开始菜单快捷方式，名称为 `Hora Space`，主程序文件名为 `HoraSpace.exe`，也可以在安装完成页面直接启动应用。
+Windows 下载后，请先解压 GitHub Actions 下载的 artifact 压缩包，拿到里面的 `HoraSpace-版本-架构.exe` 安装器，然后在 Windows 上双击运行这个安装器。不要继续用 7-Zip、WinRAR 或系统解压工具去解压这个 `.exe`，它是安装程序，不是普通压缩包。
 
-如果 Windows 提示“缺少快捷方式”或正在查找旧的 `Hora Space.exe`，通常是旧版本快捷方式残留。请先删除旧的桌面快捷方式，必要时卸载旧版本后重新运行最新安装器。
+安装完成后，安装器会创建桌面快捷方式和开始菜单快捷方式，名称为 `Hora Space`，主程序文件名为 `HoraSpace.exe`，也可以在安装完成页面直接启动应用。
+
+如果 Windows 提示“缺少快捷方式”或正在查找旧的 `Hora Space.exe`，通常是旧版本快捷方式残留、安装器被当作压缩包解开，或安全软件隔离了主程序。请先删除旧的桌面快捷方式，必要时卸载旧版本后重新运行最新安装器。
+
+正常安装后的 Windows 程序目录根部应该包含：
+
+```text
+HoraSpace.exe
+Uninstall HoraSpace.exe
+resources/
+locales/
+```
 
 ## 在 Windows 上本地打包
 
