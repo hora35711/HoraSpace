@@ -112,6 +112,10 @@ HoraSpace-0.0.1-x64.exe
 HoraSpace-0.0.1-arm64.exe
 ```
 
+Windows 下载后请运行上面的 `HoraSpace-版本-架构.exe` 安装器。安装完成后，安装器会创建桌面快捷方式和开始菜单快捷方式，名称为 `Hora Space`，也可以在安装完成页面直接启动应用。
+
+如果 Windows 提示“缺少快捷方式”或正在查找 `Hora Space.exe`，通常是旧版本快捷方式残留。请先删除旧的桌面快捷方式，必要时卸载旧版本后重新运行最新安装器。
+
 ## 在 Windows 上本地打包
 
 如果你有 Windows 电脑或 Windows 虚拟机，可以在 Windows 里直接打包：
