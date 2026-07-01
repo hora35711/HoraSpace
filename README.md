@@ -146,4 +146,32 @@ dist-electron/releases/
 
 ## 许可证
 
-项目默认遵循仓库当前许可设置。
+本项目当前使用 MIT License，详见根目录 `LICENSE`。
+
+## 开源许可证说明
+
+本项目依赖了多个开源项目。根据当前 `package.json`、`electron/package.json` 和本地依赖扫描结果，直接依赖主要是宽松许可证：
+
+- MIT：React、Next.js、Electron、Radix UI、Tiptap、Excalidraw、Tailwind 相关工具、date-fns、Recharts 等
+- Apache-2.0：TypeScript、class-variance-authority 等
+- ISC：lucide-react 等
+
+这些许可证通常允许商用、修改、分发和闭源发布，但发布软件时应保留对应开源项目的版权声明和许可证文本。
+
+需要额外注意的传递依赖：
+
+- `@img/sharp-libvips-darwin-arm64`：LGPL-3.0-or-later
+- `lightningcss` / `lightningcss-darwin-arm64`：MPL-2.0
+- `axe-core`：MPL-2.0
+- `dompurify`：MPL-2.0 OR Apache-2.0
+- `caniuse-lite`：CC-BY-4.0
+
+发布安装包时建议：
+
+- 保留根目录 `LICENSE`
+- 不要删除 Electron 打包产物里的 `LICENSE.electron.txt` 和 `LICENSES.chromium.html`
+- 如正式对外分发，建议生成并随安装包附带第三方开源许可证清单
+- 如果修改了 MPL 许可证覆盖的源码文件，需要按 MPL 要求公开对应修改文件
+- 如果分发包含 LGPL 组件的二进制产物，需要保留许可证声明，并确保满足 LGPL 对替换、重新链接或获取相关组件源码的要求
+
+以上内容是工程侧合规提示，不构成法律意见。正式商用发布前，建议再使用许可证扫描工具生成完整第三方 notice 文件。
