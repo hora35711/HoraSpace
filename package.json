@@ -120,6 +120,7 @@
     },
     "win": {
       "icon": "icon/hora_space_icon.ico",
+      "executableName": "HoraSpace",
       "target": [
         "nsis"
       ]
