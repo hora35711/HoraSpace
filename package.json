@@ -14,9 +14,9 @@
     "prepare:release-assets": "node scripts/collect-release-assets.mjs",
     "dist": "npm run build && npm run prepare:electron && electron-builder && npm run prepare:release-assets",
     "dist:mac": "npm run build && npm run prepare:electron && electron-builder --mac && npm run prepare:release-assets",
-    "dist:win": "node scripts/ensure-windows-host.mjs && npm run build && npm run prepare:electron && electron-builder --win && npm run prepare:release-assets",
-    "dist:win:x64": "node scripts/ensure-windows-host.mjs && npm run build && npm run prepare:electron && electron-builder --win --x64 && npm run prepare:release-assets",
-    "dist:win:arm64": "node scripts/ensure-windows-host.mjs && npm run build && npm run prepare:electron && electron-builder --win --arm64 && npm run prepare:release-assets",
+    "dist:win": "node scripts/ensure-windows-host.mjs && npm run build && npm run prepare:electron && electron-builder --win --publish never && npm run prepare:release-assets",
+    "dist:win:x64": "node scripts/ensure-windows-host.mjs && npm run build && npm run prepare:electron && electron-builder --win --x64 --publish never && npm run prepare:release-assets",
+    "dist:win:arm64": "node scripts/ensure-windows-host.mjs && npm run build && npm run prepare:electron && electron-builder --win --arm64 --publish never && npm run prepare:release-assets",
     "electron:dev": "concurrently \"npm run dev\" \"cd electron && ELECTRON_RENDERER_URL=http://localhost:3000 npm run start\"",
     "electron:prod": "npm run build && concurrently \"npm run start\" \"npx wait-on http://localhost:3000 && cd electron && npm run start\""
   },
