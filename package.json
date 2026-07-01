@@ -1,8 +1,8 @@
 {
   "name": "hora",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
-  "description": "Hora Space desktop app",
+  "description": "HoraSpace desktop app",
   "author": "Hora",
   "main": "electron/main.cjs",
   "private": true,
@@ -84,7 +84,7 @@
   "build": {
     "electronVersion": "37.0.0",
     "appId": "com.hora.space",
-    "productName": "Hora Space",
+    "productName": "HoraSpace",
     "asar": true,
     "afterPack": "scripts/electron-after-pack.cjs",
     "directories": {
@@ -129,11 +129,12 @@
       "icon": "icon/hora_space_icon.png"
     },
     "nsis": {
+      "include": "installer/windows-shortcuts.nsh",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "Hora Space",
+      "shortcutName": "HoraSpace",
       "runAfterFinish": true
     }
   }

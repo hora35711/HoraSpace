@@ -237,7 +237,7 @@ function createMainWindow(rendererUrl) {
     minHeight: 720,
     // 先隐藏，等首帧渲染完成再显示，避免 mac 上出现“只有菜单栏、窗口没露出来”的错觉。
     show: false,
-    // 统一使用 Hora Space 品牌图标，确保窗口标题栏、任务栏和快捷方式视觉一致。
+    // 统一使用 HoraSpace 品牌图标，确保窗口标题栏、任务栏和快捷方式视觉一致。
     icon: getAppIconPath(),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),

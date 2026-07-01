@@ -53,8 +53,8 @@ for (const entry of fs.readdirSync(outputDir, { withFileTypes: true })) {
   const candidateRoot = path.join(outputDir, entry.name)
   const standaloneTargets = []
 
-  // macOS .app：Contents/Resources/standalone
-  const macStandalone = path.join(candidateRoot, "Hora Space.app", "Contents", "Resources", "standalone")
+  // macOS .app：使用无空格的 HoraSpace.app，避免启动台和脚本路径出现命名不一致。
+  const macStandalone = path.join(candidateRoot, "HoraSpace.app", "Contents", "Resources", "standalone")
   if (fs.existsSync(macStandalone)) {
     standaloneTargets.push(macStandalone)
   }
