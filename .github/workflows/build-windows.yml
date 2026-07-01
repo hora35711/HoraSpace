@@ -1,0 +1,48 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      # 同时产出 x64 / arm64 两个 Windows 安装包，方便对应不同机器架构分发。
+      matrix:
+        arch: [x64, arm64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Electron dependencies
+        working-directory: electron
+        run: npm ci
+
+      - name: Build Windows installer
+        run: npm run dist:win:${{ matrix.arch }}
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          # 统一把安装包和图标资源归档到同一个 release 产物。
+          name: hora-windows-${{ matrix.arch }}
+          path: |
+            dist-electron/releases/*.exe
+            dist-electron/releases/*.blockmap
+            dist-electron/releases/*.yml
+            dist-electron/releases/icon/**
+          if-no-files-found: error

@@ -1,0 +1,149 @@
+# Hora Space
+Hora Space 是一个面向项目、需求、任务和笔记协作的桌面应用，支持 Next.js 前端、Electron 桌面壳、SQLite 本地数据和品牌化安装包。
+
+## 快速开始
+
+先安装依赖：
+
+```bash
+npm install
+cd electron && npm install
+cd ..
+```
+
+然后启动开发环境：
+
+```bash
+npm run electron:dev
+```
+
+这条命令会同时启动：
+
+- Next.js 开发服务器
+- Electron 桌面窗口
+
+## 常用脚本
+
+- `npm run dev`：仅启动 Next.js 开发服务
+- `npm run build`：构建生产版 Next.js 产物
+- `npm run start`：启动 Next.js 生产服务
+- `npm run electron:dev`：开发模式下启动桌面应用
+- `npm run electron:prod`：先构建，再用本地生产方式启动 Electron
+- `npm run dist:mac`：打包 mac 安装包
+- `npm run dist:win:x64`：打包 Windows x64 安装包
+- `npm run dist:win:arm64`：打包 Windows arm64 安装包
+
+## 打包说明
+
+桌面端打包会先执行 Next 构建，再准备 Electron 运行所需的 standalone 目录，最后交给 `electron-builder` 输出安装包。
+
+### 输出目录
+
+所有发行物统一输出到：
+
+```text
+dist-electron/releases/
+```
+
+### 文件命名
+
+安装包文件名统一使用驼峰风格，并携带版本和架构，例如：
+
+- `HoraSpace-0.0.1-arm64.dmg`
+- `HoraSpace-0.0.1-x64.exe`
+
+### 图标资源
+
+品牌图标会同步复制到：
+
+```text
+dist-electron/releases/icon/
+```
+
+同时，应用窗口、安装包、启动台、快捷方式和站点图标都会尽量统一到同一套品牌图标。
+
+## 平台注意事项
+
+- macOS：ARM 虚拟机可直接使用 `arm64` 安装包
+- Windows：请在 Windows 机器或 Windows CI 上打包，避免原生模块架构不匹配
+- 当前仓库已经提供 Windows x64 和 arm64 的 GitHub Actions 构建流程
+
+## Windows CI
+
+Windows 构建工作流位于：
+
+```text
+.github/workflows/build-windows.yml
+```
+
+触发方式：
+
+- 手动在 GitHub Actions 里运行 `Build Windows`
+- 或者在 `main` 分支 push 后自动执行
+
+CI 会同时产出：
+
+- `hora-windows-x64`
+- `hora-windows-arm64`
+
+## 在 Mac 上打 Windows 包
+
+Mac 上不要直接执行 Windows 打包命令。项目里有平台保护脚本，`npm run dist:win:x64` 和 `npm run dist:win:arm64` 在 macOS 上会主动中止，避免把 macOS 的原生模块带进 Windows 安装包。
+
+推荐流程：
+
+1. 把当前代码推送到 GitHub 仓库
+2. 打开 GitHub 仓库页面
+3. 进入 `Actions`
+4. 选择 `Build Windows`
+5. 点击 `Run workflow`
+6. 等待两个任务完成
+7. 在 workflow 详情页下载构建产物
+
+下载后的产物包含：
+
+- `hora-windows-x64`：适合大多数 Intel / AMD Windows 电脑
+- `hora-windows-arm64`：适合 Windows ARM 设备
+
+安装包内部文件名会保持统一格式：
+
+```text
+HoraSpace-0.0.1-x64.exe
+HoraSpace-0.0.1-arm64.exe
+```
+
+## 在 Windows 上本地打包
+
+如果你有 Windows 电脑或 Windows 虚拟机，可以在 Windows 里直接打包：
+
+```bash
+npm install
+cd electron && npm install
+cd ..
+npm run dist:win:x64
+npm run dist:win:arm64
+```
+
+打包完成后，安装包会输出到：
+
+```text
+dist-electron/releases/
+```
+
+## 目录约定
+
+- `app/`：Next.js App Router 页面和前端界面
+- `electron/`：Electron 主进程、预加载脚本、本地数据库和空间管理逻辑
+- `icon/`：品牌图标源文件
+- `scripts/`：打包前后处理脚本
+- `dist-electron/`：打包产物输出目录
+
+## 本地开发提醒
+
+- 如果你在开发时修改了 Electron 相关逻辑，建议重新运行 `npm run electron:dev`
+- 如果你在修改打包逻辑，建议重新执行 `npm run dist:mac` 或对应 Windows 构建脚本验证产物
+- 如果安装包出现白屏，优先检查 Electron 主进程日志和 `standalone` 是否完整拷贝
+
+## 许可证
+
+项目默认遵循仓库当前许可设置。

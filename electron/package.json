@@ -1,0 +1,14 @@
+{
+  "name": "Hora Space",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "chokidar": "^5.0.0",
+    "electron": "^37.0.0"
+  }
+}

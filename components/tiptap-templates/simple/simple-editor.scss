@@ -1,0 +1,91 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap");
+
+body {
+  --tt-toolbar-height: 44px;
+  --tt-theme-text: var(--tt-gray-light-900);
+
+  .dark & {
+    --tt-theme-text: var(--tt-gray-dark-900);
+  }
+}
+
+body {
+  font-family: "Inter", sans-serif;
+  color: var(--tt-theme-text);
+  font-optical-sizing: auto;
+  font-weight: 400;
+  font-style: normal;
+  padding: 0;
+  overscroll-behavior-y: none;
+}
+
+html,
+body {
+  overscroll-behavior-x: none;
+}
+
+html,
+body,
+#root,
+#app {
+  height: 100%;
+  background-color: var(--tt-bg-color);
+}
+
+::-webkit-scrollbar {
+  width: 0.25rem;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--tt-scrollbar-color) transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--tt-scrollbar-color);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tiptap.ProseMirror {
+  font-family: "DM Sans", sans-serif;
+}
+
+.simple-editor-wrapper {
+  /* 适配应用主内容容器：避免 100vw 在有侧栏时产生横向偏移。 */
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  /* 编辑器外层容器在深色/浅色下都明确使用主题背景。 */
+  background-color: var(--tt-bg-color);
+}
+
+.simple-editor-content {
+  /* 在业务页面中铺满可用宽度，避免编辑热区被挤到中右区域。 */
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  /* 内容容器也使用同主题背景，消除“外黑内透明”现象。 */
+  background-color: var(--tt-bg-color);
+}
+
+.simple-editor-content .tiptap.ProseMirror.simple-editor {
+  flex: 1;
+  padding: 3rem 3rem 30vh;
+  /* 编辑区本体明确设置前景色和背景色，避免文字反转但底色未切换。 */
+  color: var(--tt-theme-text);
+  background-color: var(--tt-bg-color);
+}
+
+@media screen and (max-width: 480px) {
+  .simple-editor-content .tiptap.ProseMirror.simple-editor {
+    padding: 1rem 1.5rem 30vh;
+  }
+}
