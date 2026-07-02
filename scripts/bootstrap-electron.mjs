@@ -7,8 +7,13 @@ import process from "node:process"
 const rootDir = process.cwd()
 const electronDir = path.join(rootDir, "electron")
 const electronNodeModulesDir = path.join(electronDir, "node_modules")
-// Windows 需要调用 npm.cmd，直接用 npm 会出现 spawnSync ENOENT。
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm"
+// 优先使用 npm 自己暴露的执行入口，避免 Windows 下 PATH 不完整导致 spawnSync ENOENT。
+const npmExecPath = process.env.npm_execpath
+
+if (!npmExecPath) {
+  console.error("[hora] 未找到 npm_execpath，无法安全启动 electron 依赖准备流程。")
+  process.exit(1)
+}
 
 function run(command, args, cwd) {
   const result = spawnSync(command, args, {
@@ -29,10 +34,14 @@ function run(command, args, cwd) {
 try {
   if (!fs.existsSync(electronNodeModulesDir)) {
     // 第一次拉代码时，electron/ 目录可能还没有依赖，先完整安装一次。
-    run(npmCommand, ["install"], electronDir)
+    run(process.execPath, [npmExecPath, "install"], electronDir)
   } else {
     // 已经安装过时，只重编译关键原生模块，避免 Node / Electron ABI 不一致。
-    run(npmCommand, ["rebuild", "better-sqlite3", "--runtime=electron", "--target=37.0.0", "--dist-url=https://electronjs.org/headers"], electronDir)
+    run(
+      process.execPath,
+      [npmExecPath, "rebuild", "better-sqlite3", "--runtime=electron", "--target=37.0.0", "--dist-url=https://electronjs.org/headers"],
+      electronDir,
+    )
   }
 
   console.log("[hora] electron 依赖已准备完成")
