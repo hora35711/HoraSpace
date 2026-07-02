@@ -22,6 +22,10 @@ if (bootstrapResult.error) {
   process.exit(1)
 }
 
+if (bootstrapResult.status !== 0) {
+  process.exit(bootstrapResult.status ?? 1)
+}
+
 if (!npmExecPath) {
   console.error("[hora] 未找到 npm_execpath，无法启动 Next 开发服务器。")
   process.exit(1)

@@ -214,6 +214,13 @@ npm run dist:win:arm64
 npm run setup
 ```
 
+如果 Windows 上安装中断过，导致 `electron/node_modules` 里缺少 `electron.cmd`、`prebuild-install` 等文件，请先切换到 Node.js 20 LTS，再删除 `electron/node_modules` 后重新执行：
+
+```powershell
+npm install
+npm run setup
+```
+
 打包完成后，安装包会输出到：
 
 ```text
