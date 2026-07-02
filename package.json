@@ -21,7 +21,7 @@
     "dist:win:arm64": "node scripts/ensure-windows-host.mjs && npm run build && npm run prepare:electron && electron-builder --win --arm64 --publish never && npm run prepare:release-assets",
     "dist:github:mac": "node scripts/run-github-workflow.mjs build-mac.yml",
     "dist:github:win": "node scripts/run-github-workflow.mjs build-windows.yml",
-    "electron:dev": "concurrently \"npm run dev\" \"cd electron && ELECTRON_RENDERER_URL=http://localhost:3000 npm run start\"",
+    "electron:dev": "node scripts/run-electron-dev.mjs",
     "electron:prod": "npm run build && concurrently \"npm run start\" \"npx wait-on http://localhost:3000 && cd electron && npm run start\""
   },
   "dependencies": {
