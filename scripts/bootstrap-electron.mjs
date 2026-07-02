@@ -24,6 +24,8 @@ if (!npmExecPath) {
 }
 
 function run(command, args, cwd) {
+  console.log(`[hora] 运行：${command} ${args.join(" ")}`)
+
   const result = spawnSync(command, args, {
     cwd,
     stdio: "inherit",
@@ -41,6 +43,14 @@ function run(command, args, cwd) {
 
 function hasCompleteElectronInstall() {
   return requiredElectronFiles.every((filePath) => fs.existsSync(filePath))
+}
+
+function printMissingElectronFiles() {
+  for (const filePath of requiredElectronFiles) {
+    if (!fs.existsSync(filePath)) {
+      console.log(`[hora] 缺少 electron 依赖文件：${filePath}`)
+    }
+  }
 }
 
 function warnAboutWindowsNodeVersion() {
@@ -61,7 +71,8 @@ try {
 
   if (!hasCompleteElectronInstall()) {
     // node_modules 可能存在但不完整，比如缺 electron.cmd 或 prebuild-install，这时必须完整安装。
-    run(process.execPath, [npmExecPath, "install"], electronDir)
+    printMissingElectronFiles()
+    run(process.execPath, [npmExecPath, "install", "--foreground-scripts", "--loglevel", "info"], electronDir)
   }
 
   // 依赖完整后再重编译关键原生模块，避免 Node / Electron ABI 不一致。
@@ -74,6 +85,9 @@ try {
       "--runtime=electron",
       "--target=37.0.0",
       "--dist-url=https://electronjs.org/headers",
+      "--foreground-scripts",
+      "--loglevel",
+      "info",
     ],
     electronDir,
   )

@@ -4,7 +4,6 @@
   "private": true,
   "main": "main.cjs",
   "scripts": {
-    "postinstall": "npm rebuild better-sqlite3 --runtime=electron --target=37.0.0 --dist-url=https://electronjs.org/headers",
     "start": "electron ."
   },
   "dependencies": {
