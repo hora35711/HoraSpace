@@ -131,7 +131,7 @@
     "nsis": {
       "include": "installer/windows-shortcuts.nsh",
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "HoraSpace",
