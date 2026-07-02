@@ -7,6 +7,8 @@ import process from "node:process"
 const rootDir = process.cwd()
 const electronDir = path.join(rootDir, "electron")
 const electronNodeModulesDir = path.join(electronDir, "node_modules")
+// Windows 需要调用 npm.cmd，直接用 npm 会出现 spawnSync ENOENT。
+const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm"
 
 function run(command, args, cwd) {
   const result = spawnSync(command, args, {
@@ -27,20 +29,10 @@ function run(command, args, cwd) {
 try {
   if (!fs.existsSync(electronNodeModulesDir)) {
     // 第一次拉代码时，electron/ 目录可能还没有依赖，先完整安装一次。
-    run("npm", ["install"], electronDir)
+    run(npmCommand, ["install"], electronDir)
   } else {
     // 已经安装过时，只重编译关键原生模块，避免 Node / Electron ABI 不一致。
-    run(
-      "npm",
-      [
-        "rebuild",
-        "better-sqlite3",
-        "--runtime=electron",
-        "--target=37.0.0",
-        "--dist-url=https://electronjs.org/headers",
-      ],
-      electronDir,
-    )
+    run(npmCommand, ["rebuild", "better-sqlite3", "--runtime=electron", "--target=37.0.0", "--dist-url=https://electronjs.org/headers"], electronDir)
   }
 
   console.log("[hora] electron 依赖已准备完成")
