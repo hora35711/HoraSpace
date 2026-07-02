@@ -29,13 +29,28 @@ npm run electron:dev
 - `npm run start`：启动 Next.js 生产服务
 - `npm run electron:dev`：开发模式下启动桌面应用
 - `npm run electron:prod`：先构建，再用本地生产方式启动 Electron
-- `npm run dist:mac`：打包 mac 安装包
-- `npm run dist:win:x64`：打包 Windows x64 安装包
-- `npm run dist:win:arm64`：打包 Windows arm64 安装包
+- `npm run dist`：按当前系统自动选择本机打包命令
+- `npm run dist:mac`：在 macOS 本机打包 macOS 安装包
+- `npm run dist:win:x64`：在 Windows 本机打包 Windows x64 安装包
+- `npm run dist:win:arm64`：在 Windows 本机打包 Windows arm64 安装包
+- `npm run dist:github:mac`：通过 GitHub Actions 远程打 macOS 安装包
+- `npm run dist:github:win`：通过 GitHub Actions 远程打 Windows 安装包
 
 ## 打包说明
 
 桌面端打包会先执行 Next 构建，再准备 Electron 运行所需的 standalone 目录，最后交给 `electron-builder` 输出安装包。
+
+### 打包方式选择
+
+本项目包含原生依赖，所以推荐按目标系统打包，避免把错误平台的原生模块带进安装包：
+
+| 你当前的系统 | 本机可直接打包 | 如果要打另一个系统 |
+| --- | --- | --- |
+| macOS | `npm run dist` 或 `npm run dist:mac` | Windows 包用 `npm run dist:github:win` |
+| Windows | `npm run dist`、`npm run dist:win:x64` 或 `npm run dist:win:arm64` | macOS 包用 `npm run dist:github:mac` |
+| Linux | 暂不建议本机打包 | 用 `npm run dist:github:mac` / `npm run dist:github:win` |
+
+如果你在不支持的平台执行了本机打包命令，脚本会主动中止，并提示你改用 GitHub Actions。
 
 ### 输出目录
 
@@ -62,11 +77,45 @@ dist-electron/releases/icon/
 
 同时，应用窗口、安装包、启动台、快捷方式和站点图标都会尽量统一到同一套品牌图标。
 
+## GitHub Actions 远程打包
+
+当本机不能打目标平台安装包时，可以用 GitHub Actions 远程打包。使用命令触发前，请先安装并登录 GitHub CLI：
+
+```bash
+gh auth login
+```
+
+然后按目标平台运行：
+
+```bash
+npm run dist:github:mac
+npm run dist:github:win
+```
+
+如果没有安装 `gh`，也可以手动打开 GitHub 仓库，进入 `Actions`，选择 `Build macOS` 或 `Build Windows`，再点击 `Run workflow`。
+
 ## 平台注意事项
 
 - macOS：ARM 虚拟机可直接使用 `arm64` 安装包
 - Windows：请在 Windows 机器或 Windows CI 上打包，避免原生模块架构不匹配
-- 当前仓库已经提供 Windows x64 和 arm64 的 GitHub Actions 构建流程
+- 当前仓库已经提供 macOS、Windows x64 和 Windows arm64 的 GitHub Actions 构建流程
+
+## macOS CI
+
+macOS 构建工作流位于：
+
+```text
+.github/workflows/build-mac.yml
+```
+
+触发方式：
+
+- 手动在 GitHub Actions 里运行 `Build macOS`
+- 或者在 `main` 分支 push 后自动执行
+
+CI 会产出：
+
+- `hora-macos`
 
 ## Windows CI
 
@@ -88,9 +137,15 @@ CI 会同时产出：
 
 ## 在 Mac 上打 Windows 包
 
-Mac 上不要直接执行 Windows 打包命令。项目里有平台保护脚本，`npm run dist:win:x64` 和 `npm run dist:win:arm64` 在 macOS 上会主动中止，避免把 macOS 的原生模块带进 Windows 安装包。
+Mac 上不要直接执行 Windows 本机打包命令。项目里有平台保护脚本，`npm run dist:win:x64` 和 `npm run dist:win:arm64` 在 macOS 上会主动中止，避免把 macOS 的原生模块带进 Windows 安装包。
 
-推荐流程：
+如果你在 macOS 上需要 Windows 安装包，直接运行：
+
+```bash
+npm run dist:github:win
+```
+
+也可以手动操作：
 
 1. 把当前代码推送到 GitHub 仓库
 2. 打开 GitHub 仓库页面
@@ -154,6 +209,18 @@ npm run dist:win:arm64
 ```text
 dist-electron/releases/
 ```
+
+## 在 Windows 上打 macOS 包
+
+Windows 上不要直接执行 macOS 本机打包命令。项目里有平台保护脚本，`npm run dist:mac` 在 Windows 上会主动中止。
+
+如果你在 Windows 上需要 macOS 安装包，直接运行：
+
+```bash
+npm run dist:github:mac
+```
+
+也可以手动打开 GitHub 仓库，进入 `Actions`，选择 `Build macOS`，点击 `Run workflow` 后下载 `hora-macos` artifact。
 
 ## 目录约定
 

@@ -1,0 +1,40 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Electron dependencies
+        working-directory: electron
+        run: npm ci
+
+      - name: Build macOS installer
+        run: npm run dist:mac
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          # 只上传用户需要安装的 dmg，避免把中间目录误当成安装包。
+          name: hora-macos
+          path: |
+            dist-electron/releases/HoraSpace-*.dmg
+          if-no-files-found: error
