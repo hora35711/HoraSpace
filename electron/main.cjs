@@ -10,6 +10,51 @@ const space = require("./space.cjs")
 let mainWindow = null
 const RENDERER_PORT = Number(process.env.HORA_RENDERER_PORT || 3000)
 
+// 生产包日志：安装版没有终端，写文件后才能排查“点击没反应”的真实原因。
+function installPackagedLogger() {
+  if (!app.isPackaged) return
+
+  const logDir = path.join(app.getPath("userData"), "logs")
+  const logPath = path.join(logDir, "hora-main.log")
+  fs.mkdirSync(logDir, { recursive: true })
+
+  const writeLog = (level, values) => {
+    const text = values
+      .map((value) => {
+        if (value instanceof Error) return value.stack || value.message
+        if (typeof value === "string") return value
+        try {
+          return JSON.stringify(value)
+        } catch {
+          return String(value)
+        }
+      })
+      .join(" ")
+
+    fs.appendFileSync(logPath, `[${new Date().toISOString()}] [${level}] ${text}\n`)
+  }
+
+  for (const level of ["log", "warn", "error"]) {
+    const originalConsole = console[level]
+    console[level] = (...values) => {
+      writeLog(level, values)
+      originalConsole(...values)
+    }
+  }
+
+  console.log("[hora] packaged log path:", logPath)
+}
+
+// 生产包错误提示：避免启动失败时静默退出，让用户知道日志在哪里。
+function showPackagedStartupError(title, error) {
+  const message = error instanceof Error ? error.stack || error.message : String(error)
+  console.error(title, message)
+
+  if (app.isPackaged) {
+    dialog.showErrorBox(title, `${message}\n\n日志目录：${path.join(app.getPath("userData"), "logs")}`)
+  }
+}
+
 // 根据运行环境选择真实文件路径，避免把图标路径指向 asar 内部。
 function getAppIconPath() {
   if (app.isPackaged) {
@@ -266,6 +311,14 @@ function createMainWindow(rendererUrl) {
     }
   })
 
+  // 少数 Windows 显卡/页面首帧事件异常时，兜底展示窗口，避免用户以为应用没启动。
+  setTimeout(() => {
+    if (!win.isDestroyed() && !win.isVisible()) {
+      win.show()
+      win.focus()
+    }
+  }, 5000)
+
   // 记录渲染层加载情况，便于区分“窗口没出来”和“页面加载失败”。
   win.webContents.on("did-finish-load", () => {
     console.log("[hora] renderer loaded:", win.webContents.getURL())
@@ -328,6 +381,8 @@ function waitForServer(url, timeoutMs = 30000) {
 }
 
 app.whenReady().then(async () => {
+  installPackagedLogger()
+
   // 启动后先做一次同步，保证 UI 初次读取就是最新目录。
   db.syncVaultToDatabase()
 
@@ -343,7 +398,7 @@ app.whenReady().then(async () => {
     try {
       rendererUrl = await startPackagedRendererServer()
     } catch (error) {
-      console.error("启动生产渲染服务失败:", error)
+      showPackagedStartupError("启动生产渲染服务失败", error)
       app.quit()
       return
     }
@@ -355,7 +410,7 @@ app.whenReady().then(async () => {
         createMainWindow(rendererUrl)
       })
       .catch((error) => {
-        console.error("启动生产渲染服务失败:", error)
+        showPackagedStartupError("等待生产渲染服务失败", error)
         app.quit()
       })
   } else {
