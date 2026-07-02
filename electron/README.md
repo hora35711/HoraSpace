@@ -38,7 +38,6 @@
 ## 开发启动
 
 1. 在项目根目录安装前端依赖：`npm install`
-2. 在 `electron` 目录安装 Electron 依赖：`cd electron && npm install`
-3. 如果你已经装过依赖但启动时报 `better-sqlite3` ABI 不匹配，运行：`cd electron && npm rebuild better-sqlite3 --runtime=electron --target=37.0.0 --dist-url=https://electronjs.org/headers`
-4. 启动 Next：`npm run dev`
-5. 新开终端启动 Electron：`npm run electron:dev`
+2. 根目录 `npm install` 会自动准备 `electron/` 目录的依赖；如果你想手动重跑，可执行：`npm run setup`
+3. 启动 Next：`npm run dev`
+4. 新开终端启动 Electron：`npm run electron:dev`
