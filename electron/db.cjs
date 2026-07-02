@@ -68,8 +68,12 @@ function resetRuntime() {
 
 // 解析初始化 SQL 路径：兼容开发与打包。
 function resolveSqlPath() {
+  const appPath = app.getAppPath()
+
   if (app.isPackaged) {
     const packagedCandidates = [
+      path.join(appPath, "electron", "resources", "sql", "init_local_full.sql"),
+      path.join(process.resourcesPath, "app.asar", "electron", "resources", "sql", "init_local_full.sql"),
       path.join(process.resourcesPath, "resources", "sql", "init_local_full.sql"),
       path.join(process.resourcesPath, "sql", "init_local_full.sql"),
     ]
@@ -78,7 +82,6 @@ function resolveSqlPath() {
     return packagedCandidates[0]
   }
 
-  const appPath = app.getAppPath()
   const devCandidates = [
     path.join(appPath, "resources", "sql", "init_local_full.sql"),
     path.join(appPath, "electron", "resources", "sql", "init_local_full.sql"),
@@ -86,6 +89,33 @@ function resolveSqlPath() {
   const devFound = devCandidates.find((filePath) => fs.existsSync(filePath))
   if (devFound) return devFound
   return devCandidates[0]
+}
+
+// 判断表是否存在：用于修复已经创建但缺核心表的半初始化数据库。
+function tableExists(db, tableName) {
+  const row = db.prepare(`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'table' AND name = ?
+    LIMIT 1
+  `).get(tableName)
+  return Boolean(row)
+}
+
+// 核心表缺失时必须重跑初始化 SQL，避免旧安装包留下的空库导致启动失败。
+function hasCoreSchema(db) {
+  return ["users", "workspaces", "note_nodes", "projects", "requirements", "tasks"].every((tableName) =>
+    tableExists(db, tableName),
+  )
+}
+
+// 读取初始化 SQL：路径错误时给出明确报错，方便安装版日志定位资源打包问题。
+function readInitSql(sqlPath) {
+  if (!fs.existsSync(sqlPath)) {
+    throw new Error(`未找到数据库初始化 SQL：${sqlPath}`)
+  }
+
+  return fs.readFileSync(sqlPath, "utf8")
 }
 
 // 计算文本哈希：用于内容变更识别。
@@ -903,8 +933,8 @@ function initDatabase() {
   const db = new Database(dbPath)
   db.pragma("journal_mode = DELETE")
 
-  if (isFirstInit) {
-    const initSql = fs.readFileSync(sqlPath, "utf8")
+  if (isFirstInit || !hasCoreSchema(db)) {
+    const initSql = readInitSql(sqlPath)
     db.exec(initSql)
   }
 
