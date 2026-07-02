@@ -11,6 +11,12 @@ cd electron && npm install
 cd ..
 ```
 
+如果你已经装过 `electron/node_modules`，但启动时报 `better-sqlite3` ABI 不匹配，可以手动重编译：
+
+```bash
+cd electron && npm rebuild better-sqlite3 --runtime=electron --target=37.0.0 --dist-url=https://electronjs.org/headers
+```
+
 然后启动开发环境：
 
 ```bash
@@ -202,6 +208,12 @@ cd electron && npm install
 cd ..
 npm run dist:win:x64
 npm run dist:win:arm64
+```
+
+如果你在 Windows 上也遇到 `better-sqlite3` ABI 不匹配，同样执行：
+
+```bash
+cd electron && npm rebuild better-sqlite3 --runtime=electron --target=37.0.0 --dist-url=https://electronjs.org/headers
 ```
 
 打包完成后，安装包会输出到：
