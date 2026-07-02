@@ -31,17 +31,16 @@ if (!npmExecPath) {
   process.exit(1)
 }
 
-const electronBinaryName = process.platform === "win32" ? "electron.cmd" : "electron"
-const electronBinaryPath = path.join(electronDir, "node_modules", ".bin", electronBinaryName)
+const electronCliPath = path.join(electronDir, "node_modules", "electron", "cli.js")
 
-if (!fs.existsSync(electronBinaryPath)) {
-  console.error(`[hora] 未找到 Electron 可执行文件：${electronBinaryPath}`)
+if (!fs.existsSync(electronCliPath)) {
+  console.error(`[hora] 未找到 Electron CLI：${electronCliPath}`)
   console.error("[hora] 请先运行 npm run setup，然后再执行 npm run electron:dev")
   process.exit(1)
 }
 
 function startProcess(command, args, cwd, extraEnv = {}) {
-  // 直接启动对应平台的二进制，绕开 npm 对 electron 命令解析的差异。
+  // 通过 Node 启动 Electron CLI，避免 Windows 直接 spawn electron.cmd 时出现 EINVAL。
   return spawn(command, args, {
     cwd,
     env: {
@@ -54,7 +53,7 @@ function startProcess(command, args, cwd, extraEnv = {}) {
 }
 
 const nextProcess = startProcess(process.execPath, [npmExecPath, "run", "dev"], rootDir)
-const electronProcess = startProcess(electronBinaryPath, ["."], electronDir, {
+const electronProcess = startProcess(process.execPath, [electronCliPath, "."], electronDir, {
   ELECTRON_RENDERER_URL: electronRendererUrl,
 })
 
