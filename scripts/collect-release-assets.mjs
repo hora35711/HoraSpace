@@ -9,7 +9,8 @@ const rootDir = path.resolve(__dirname, "..")
 const outputDir = path.join(rootDir, "dist-electron", "releases")
 const iconDir = path.join(rootDir, "icon")
 const releaseIconDir = path.join(outputDir, "icon")
-const sourceStandaloneNodeModules = path.join(rootDir, ".next", "standalone", "node_modules")
+const sourceStandaloneDir = path.join(rootDir, ".next", "standalone")
+const sourceStandaloneNodeModules = findStandaloneNodeModules(sourceStandaloneDir)
 
 if (!fs.existsSync(outputDir)) {
   throw new Error(`未找到发行目录：${outputDir}`)
@@ -23,7 +24,7 @@ fs.mkdirSync(releaseIconDir, { recursive: true })
 
 // Next standalone 在运行时仍需要它自己的 node_modules，打包器有时会漏掉这一层，所以这里补拷贝一次。
 function syncStandaloneNodeModules(targetStandaloneDir) {
-  if (!fs.existsSync(sourceStandaloneNodeModules)) {
+  if (!sourceStandaloneNodeModules) {
     return
   }
 
@@ -34,6 +35,37 @@ function syncStandaloneNodeModules(targetStandaloneDir) {
     force: true,
     dereference: true,
   })
+}
+
+// 兼容 Next standalone 在 Windows / monorepo 场景下出现的嵌套 node_modules 目录。
+function findStandaloneNodeModules(standaloneDir) {
+  if (!fs.existsSync(standaloneDir)) {
+    return null
+  }
+
+  const directNodeModules = path.join(standaloneDir, "node_modules")
+  if (fs.existsSync(directNodeModules)) {
+    return directNodeModules
+  }
+
+  const queue = [{ dir: standaloneDir, depth: 0 }]
+  while (queue.length > 0) {
+    const current = queue.shift()
+    if (current.depth > 4) continue
+
+    for (const entry of fs.readdirSync(current.dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+
+      const candidate = path.join(current.dir, entry.name)
+      if (entry.name === "node_modules") {
+        return candidate
+      }
+
+      queue.push({ dir: candidate, depth: current.depth + 1 })
+    }
+  }
+
+  return null
 }
 
 for (const entry of fs.readdirSync(iconDir, { withFileTypes: true })) {
