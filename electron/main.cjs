@@ -294,14 +294,15 @@ function createMainWindow(rendererUrl) {
   mainWindow = win
 
   const devUrl = process.env.ELECTRON_RENDERER_URL
+  const targetUrl = devUrl || rendererUrl
+  let loadRetryCount = 0
 
-  if (devUrl) {
-    // 开发模式
-    win.loadURL(devUrl)
-  } else {
-    // 生产模式：优先加载由打包产物启动的本地 Next 服务。
-    win.loadURL(rendererUrl)
+  function loadRendererUrl() {
+    // 统一加载渲染层 URL；开发态和生产态都允许短暂失败后重试，避免白屏卡死。
+    win.loadURL(targetUrl)
   }
+
+  loadRendererUrl()
 
   // 页面准备完成后再展示，减少白屏和后台窗口不显形的问题。
   win.once("ready-to-show", () => {
@@ -329,6 +330,22 @@ function createMainWindow(rendererUrl) {
       errorDescription,
       validatedURL,
     })
+
+    if (errorCode !== -3 && loadRetryCount < 30) {
+      loadRetryCount += 1
+      setTimeout(() => {
+        if (!win.isDestroyed()) {
+          console.warn(`[hora] retry renderer load ${loadRetryCount}/30: ${targetUrl}`)
+          loadRendererUrl()
+        }
+      }, 500)
+    }
+  })
+  win.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    // 把渲染层报错同步到主进程日志，安装版白屏时可以直接看 hora-main.log。
+    if (level >= 2) {
+      console.error("[hora] renderer console:", { level, message, line, sourceId })
+    }
   })
   win.webContents.on("render-process-gone", (_event, details) => {
     console.error("[hora] renderer process gone:", details)

@@ -13,6 +13,8 @@ const npmExecPath = process.env.npm_execpath
 const rendererUrl = new URL(electronRendererUrl)
 const rendererPort = rendererUrl.port || (rendererUrl.protocol === "https:" ? "443" : "80")
 const nextDevLockPath = path.join(rootDir, ".next", "dev", "lock")
+let nextProcess = null
+let electronProcess = null
 
 // 先把 electron/ 目录依赖准备好，避免用户只跑一次 electron:dev 时缺少 electron 二进制。
 const bootstrapResult = spawnSync(process.execPath, [bootstrapScript], {
@@ -75,6 +77,42 @@ function isRendererAvailable(url) {
   })
 }
 
+function waitForRenderer(url, timeoutMs = 60000) {
+  // Electron 必须等 Next 真正 ready 后再 loadURL，否则首屏会停在空白页且不会自动重试。
+  const startedAt = Date.now()
+
+  return new Promise((resolve, reject) => {
+    const probe = () => {
+      const request = http.get(url, (response) => {
+        response.resume()
+        if (response.statusCode && response.statusCode < 500) {
+          resolve(true)
+          return
+        }
+
+        retry()
+      })
+
+      const retry = () => {
+        if (Date.now() - startedAt > timeoutMs) {
+          reject(new Error(`等待 Next 开发服务超时：${url}`))
+          return
+        }
+        setTimeout(probe, 500)
+      }
+
+      request.setTimeout(1000, () => {
+        request.destroy()
+        retry()
+      })
+
+      request.on("error", retry)
+    }
+
+    probe()
+  })
+}
+
 function removeStaleNextDevLock() {
   // 没有可用渲染服务时，旧 lock 多半来自异常退出；删除它可以让本次开发启动自愈。
   if (fs.existsSync(nextDevLockPath)) {
@@ -91,14 +129,23 @@ if (shouldReuseRenderer) {
   removeStaleNextDevLock()
 }
 
-const nextProcess = shouldReuseRenderer
-  ? null
-  : startProcess(
-      process.execPath,
-      [npmExecPath, "run", "dev", "--", "--hostname", "127.0.0.1", "--port", rendererPort],
-      rootDir,
-    )
-const electronProcess = startProcess(process.execPath, [electronCliPath, "."], electronDir, {
+if (!shouldReuseRenderer) {
+  nextProcess = startProcess(
+    process.execPath,
+    [npmExecPath, "run", "dev", "--", "--hostname", "127.0.0.1", "--port", rendererPort],
+    rootDir,
+  )
+}
+
+try {
+  await waitForRenderer(electronRendererUrl)
+} catch (error) {
+  console.error("[hora] Next 开发服务没有按时就绪：", error)
+  shutdown(1)
+  process.exit(1)
+}
+
+electronProcess = startProcess(process.execPath, [electronCliPath, "."], electronDir, {
   ELECTRON_RENDERER_URL: electronRendererUrl,
 })
 
@@ -108,7 +155,7 @@ let finishedCount = 0
 function shutdown(code) {
   exitCode = exitCode || code || 0
   nextProcess?.kill()
-  electronProcess.kill()
+  electronProcess?.kill()
 }
 
 for (const child of [nextProcess, electronProcess].filter(Boolean)) {
