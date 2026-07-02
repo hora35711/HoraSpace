@@ -15,10 +15,10 @@
     "prepare:electron": "node scripts/prepare-electron.mjs",
     "prepare:release-assets": "node scripts/collect-release-assets.mjs",
     "dist": "node scripts/run-local-dist.mjs",
-    "dist:mac": "node scripts/ensure-macos-host.mjs && npm run build && npm run prepare:electron && electron-builder --mac --publish never && npm run prepare:release-assets",
-    "dist:win": "node scripts/ensure-windows-host.mjs && npm run build && npm run prepare:electron && electron-builder --win --publish never && npm run prepare:release-assets",
-    "dist:win:x64": "node scripts/ensure-windows-host.mjs && npm run build && npm run prepare:electron && electron-builder --win --x64 --publish never && npm run prepare:release-assets",
-    "dist:win:arm64": "node scripts/ensure-windows-host.mjs && npm run build && npm run prepare:electron && electron-builder --win --arm64 --publish never && npm run prepare:release-assets",
+    "dist:mac": "node scripts/ensure-macos-host.mjs && npm run setup && npm run build && npm run prepare:electron && electron-builder --mac --publish never && npm run prepare:release-assets",
+    "dist:win": "node scripts/ensure-windows-host.mjs && npm run setup && npm run build && npm run prepare:electron && electron-builder --win --publish never && npm run prepare:release-assets",
+    "dist:win:x64": "node scripts/ensure-windows-host.mjs && npm run setup && npm run build && npm run prepare:electron && electron-builder --win --x64 --publish never && npm run prepare:release-assets",
+    "dist:win:arm64": "node scripts/ensure-windows-host.mjs && npm run setup && npm run build && npm run prepare:electron && electron-builder --win --arm64 --publish never && npm run prepare:release-assets",
     "dist:github:mac": "node scripts/run-github-workflow.mjs build-mac.yml",
     "dist:github:win": "node scripts/run-github-workflow.mjs build-windows.yml",
     "electron:dev": "node scripts/run-electron-dev.mjs",
@@ -90,6 +90,7 @@
     "appId": "com.hora.space",
     "productName": "HoraSpace",
     "asar": true,
+    "npmRebuild": false,
     "afterPack": "scripts/electron-after-pack.cjs",
     "directories": {
       "output": "dist-electron/releases"

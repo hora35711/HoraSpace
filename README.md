@@ -208,6 +208,8 @@ npm run dist:win:x64
 npm run dist:win:arm64
 ```
 
+本地打包脚本会先自动执行 `npm run setup`，把 Electron 运行时真正需要的原生依赖准备好；`electron-builder` 不再重编译根目录里的开发依赖，所以正常情况下不需要为了 `@parcel/watcher` 单独安装 Python。
+
 如果你在 Windows 上也遇到 `better-sqlite3` ABI 不匹配，直接再执行：
 
 ```bash
