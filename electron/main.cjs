@@ -4,11 +4,11 @@ const fs = require("node:fs")
 const http = require("node:http")
 const { pathToFileURL } = require("node:url")
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron")
-const db = require("./db.cjs")
-const space = require("./space.cjs")
 
 let mainWindow = null
-const RENDERER_PORT = Number(process.env.HORA_RENDERER_PORT || 3000)
+let db = null
+let space = null
+const DEFAULT_RENDERER_PORT = Number(process.env.HORA_RENDERER_PORT || 3000)
 
 // 生产包日志：安装版没有终端，写文件后才能排查“点击没反应”的真实原因。
 function installPackagedLogger() {
@@ -55,6 +55,12 @@ function showPackagedStartupError(title, error) {
   }
 }
 
+// 延迟加载运行时模块：better-sqlite3 等原生模块失败时，必须先有日志系统才能定位安装包问题。
+function loadRuntimeModules() {
+  db = require("./db.cjs")
+  space = require("./space.cjs")
+}
+
 // 根据运行环境选择真实文件路径，避免把图标路径指向 asar 内部。
 function getAppIconPath() {
   if (app.isPackaged) {
@@ -80,6 +86,10 @@ function notifySpacesChanged() {
 
 // 切换空间后重建 DB 和监听器，避免旧路径继续占用。
 function reloadCurrentSpaceRuntime() {
+  if (!db || !space) {
+    throw new Error("运行时模块尚未初始化")
+  }
+
   db.resetRuntime()
   db.syncVaultToDatabase()
   db.startNotesWatcher(() => {
@@ -91,6 +101,10 @@ function reloadCurrentSpaceRuntime() {
 
 // 注册 IPC：渲染层通过 preload 调用本地数据库方法。
 function registerDbIpc() {
+  if (!db || !space) {
+    throw new Error("运行时模块尚未初始化")
+  }
+
   ipcMain.handle("shell:notes:showInFinder", (_event, noteId) => {
     const note = db.getNoteById(noteId)
     if (!note || !note.filePath) {
@@ -363,14 +377,49 @@ async function startPackagedRendererServer() {
     throw new Error(`未找到生产渲染器入口：${serverPath}`)
   }
 
+  const rendererPort = await findAvailablePort(DEFAULT_RENDERER_PORT)
+
   // 直接在 Electron 主进程内加载 standalone 服务，避免额外 Node 图标和第二个进程。
   process.env.NODE_ENV = "production"
   process.env.HOSTNAME = "127.0.0.1"
-  process.env.PORT = String(RENDERER_PORT)
+  process.env.PORT = String(rendererPort)
 
   await import(pathToFileURL(serverPath).href)
 
-  return `http://127.0.0.1:${RENDERER_PORT}`
+  console.log("[hora] packaged renderer server:", {
+    serverPath,
+    port: rendererPort,
+  })
+
+  return `http://127.0.0.1:${rendererPort}`
+}
+
+// 安装版避免固定占用 3000：Windows 上端口冲突会让 standalone 直接退出，看起来像双击没反应。
+function findAvailablePort(preferredPort) {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer()
+
+    server.once("error", (error) => {
+      if (error.code === "EADDRINUSE") {
+        findAvailablePort(0).then(resolve, reject)
+        return
+      }
+
+      reject(error)
+    })
+
+    server.listen(preferredPort, "127.0.0.1", () => {
+      const address = server.address()
+      server.close(() => {
+        if (address && typeof address === "object") {
+          resolve(address.port)
+          return
+        }
+
+        reject(new Error("无法获取可用本地端口"))
+      })
+    })
+  })
 }
 
 // 等待本地服务可用：避免窗口过早打开导致空白页。
@@ -400,15 +449,29 @@ function waitForServer(url, timeoutMs = 30000) {
 app.whenReady().then(async () => {
   installPackagedLogger()
 
+  try {
+    loadRuntimeModules()
+  } catch (error) {
+    showPackagedStartupError("加载本地运行时模块失败", error)
+    app.quit()
+    return
+  }
+
   // 启动后先做一次同步，保证 UI 初次读取就是最新目录。
-  db.syncVaultToDatabase()
+  try {
+    db.syncVaultToDatabase()
 
-  // 启动文件监听：任何 notes 目录变化都推送前端刷新。
-  db.startNotesWatcher(() => {
-    notifyNotesChanged()
-  })
+    // 启动文件监听：任何 notes 目录变化都推送前端刷新。
+    db.startNotesWatcher(() => {
+      notifyNotesChanged()
+    })
 
-  registerDbIpc()
+    registerDbIpc()
+  } catch (error) {
+    showPackagedStartupError("初始化本地数据失败", error)
+    app.quit()
+    return
+  }
 
   let rendererUrl = process.env.ELECTRON_RENDERER_URL || "http://localhost:3000"
   if (app.isPackaged) {
