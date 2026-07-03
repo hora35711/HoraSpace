@@ -173,6 +173,10 @@ export default function NoteEditorPage() {
   const isHydratingContentRef = React.useRef(false)
   // 最近一次真正完成加载的 noteId：用于判断是否需要在切换前自动保存。
   const loadedNoteIdRef = React.useRef<string | null>(null)
+  // 自动保存中的共享 Promise：避免“点击外部”和“点击文件树”同时触发两次保存。
+  const saveInFlightRef = React.useRef<Promise<void> | null>(null)
+  // 编辑器可视区域：点击该区域外时触发自动保存。
+  const editorSurfaceRef = React.useRef<HTMLDivElement | null>(null)
   // Excalidraw API 引用：用于导入 Mermaid 后直接写入场景。
   const excalidrawApiRef = React.useRef<ExcalidrawImperativeAPI | null>(null)
   // 画布实时场景缓存：保存时直接序列化，避免读取过期状态。
@@ -491,6 +495,24 @@ export default function NoteEditorPage() {
     }
   }, [editorHtml, noteFileKind, tabs, textPreview, turndown])
 
+  // 共享自动保存入口：外部点击、文件树切换、标签切换都可以共用它。
+  const requestAutoSave = useCallback(async () => {
+    if (!hasUnsavedChangesRef.current) return
+    if (saveInFlightRef.current) {
+      await saveInFlightRef.current
+      return
+    }
+
+    let currentPromise: Promise<void>
+    currentPromise = handleSave().finally(() => {
+      if (saveInFlightRef.current === currentPromise) {
+        saveInFlightRef.current = null
+      }
+    })
+    saveInFlightRef.current = currentPromise
+    await currentPromise
+  }, [handleSave])
+
   // 左侧文件树切换文件前的统一保存回调：树组件会先等待这里完成，再执行路由跳转。
   useEffect(() => {
     const bridge = window as Window & {
@@ -498,15 +520,31 @@ export default function NoteEditorPage() {
     }
 
     bridge.horaNotesBeforeNavigate = async () => {
-      if (!hasUnsavedChangesRef.current) return
-      await handleSave()
+      await requestAutoSave()
     }
 
     return () => {
       if (bridge.horaNotesBeforeNavigate === undefined) return
       delete bridge.horaNotesBeforeNavigate
     }
-  }, [handleSave])
+  }, [requestAutoSave])
+
+  // 鼠标点击编辑器区域之外时自动保存，避免切走前忘记点保存按钮。
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      const editorSurface = editorSurfaceRef.current
+      if (!editorSurface) return
+      if (editorSurface.contains(target)) return
+      void requestAutoSave()
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown, true)
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true)
+    }
+  }, [requestAutoSave])
 
   // 绘图/文本模式快捷键桥接：补齐 Markdown 编辑器已有的 Cmd/Ctrl + S 保存行为。
   useEffect(() => {
@@ -794,7 +832,7 @@ export default function NoteEditorPage() {
           {error ? <p className="mb-2 text-sm text-rose-600">{error}</p> : null}
 
           {/* 编辑区：去掉外层圆角和内缩，消除边框间距。 */}
-          <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div ref={editorSurfaceRef} className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             {noteFileKind === "drawing" ? (
               <div className="h-full min-h-0">
                 {drawingReady ? (
