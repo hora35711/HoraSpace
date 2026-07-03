@@ -1,6 +1,7 @@
 // app/layout.tsx
 // 根布局：注入全局样式、全局主题，并挂载应用主壳。
 import "./globals.css"
+import { AppLanguageRoot } from "@/components/app-language-provider"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AppShell } from "@/app/app-shell"
 
@@ -20,8 +21,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {/* ThemeProvider：全局主题管理，默认跟随系统，可被手动切换覆盖。 */}
         <ThemeProvider>
-          {/* AppShell：左侧导航 + 可拖拽分栏 + 右侧页面内容。 */}
-          <AppShell>{children}</AppShell>
+          {/* AppLanguageRoot：全局语言管理，公共文案切换后即时生效。 */}
+          <AppLanguageRoot>
+            {/* AppShell：左侧导航 + 可拖拽分栏 + 右侧页面内容。 */}
+            <AppShell>{children}</AppShell>
+          </AppLanguageRoot>
         </ThemeProvider>
       </body>
     </html>

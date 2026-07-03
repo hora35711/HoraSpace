@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { FolderUp } from "lucide-react"
+import { useT } from "@/lib/app-language"
 
 type SpaceDialogMode = "create" | "migrate"
 
@@ -36,6 +37,7 @@ export function SpaceDialog({
   onOpenChange,
   onSubmit,
 }: SpaceDialogProps) {
+  const t = useT()
   const [name, setName] = React.useState(defaultName)
   const [rootPath, setRootPath] = React.useState(defaultPath)
   const [saving, setSaving] = React.useState(false)
@@ -63,11 +65,11 @@ export function SpaceDialog({
     const trimmedRootPath = rootPath.trim()
 
     if (!lockName && !trimmedName) {
-      setError("空间名称不能为空")
+      setError(`${t("spaceName")} 不能为空`)
       return
     }
     if (!trimmedRootPath) {
-      setError("空间路径不能为空")
+      setError(`${t("spacePath")} 不能为空`)
       return
     }
 
@@ -101,28 +103,28 @@ export function SpaceDialog({
               id="space-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="请输入空间名称"
+              placeholder={t("spaceName")}
               disabled={lockName}
             />
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="space-root">空间路径</Label>
+            <Label htmlFor="space-root">{t("spacePath")}</Label>
             <div className="flex gap-2">
               <Input
                 id="space-root"
                 value={rootPath}
                 onChange={(event) => setRootPath(event.target.value)}
-                placeholder="请选择或输入空间目录"
+                placeholder={t("selectSpaceDirectory")}
               />
               <Button type="button" variant="outline" onClick={() => void handlePickFolder()}>
                 <FolderUp className="mr-2 size-4" />
-                选择
+                {t("choose")}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
               {mode === "create"
-                ? "选择一个文件夹作为这个空间的数据根，之后空间数据、数据库和插件都会放在这里。"
+                ? t("selectSpaceDirectoryDescription")
                 : "选择新的文件夹后会自动移动当前空间全部数据，并更新数据库路径。"}
             </p>
           </div>
@@ -132,7 +134,7 @@ export function SpaceDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            取消
+            {t("cancel")}
           </Button>
           <Button onClick={() => void handleSubmit()} disabled={saving}>
             {submitLabel}

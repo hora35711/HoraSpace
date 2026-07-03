@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/sidebar"
 
 import { type NoteTreeNode } from "@/components/sidebar-data"
+import { useT } from "@/lib/app-language"
 
 type NavNotesProps = {
   tree: NoteTreeNode[]
@@ -37,6 +38,7 @@ function collectFolderTargets(nodes: NoteTreeNode[]): NoteTreeNode[] {
 
 // Notes 分组：渲染带 id 的目录树。
 export function NavNotes({ tree }: NavNotesProps) {
+  const t = useT()
   // 根目录新建文件夹弹层状态。
   const [open, setOpen] = React.useState(false)
   // 根目录文件夹名称输入。
@@ -75,7 +77,7 @@ export function NavNotes({ tree }: NavNotesProps) {
     <SidebarGroup>
       {/* Notes 标题行右侧加号：仅用于根目录新建文件夹。 */}
       <SidebarGroupLabel className="flex items-center justify-between">
-        <span>Notes</span>
+        <span>{t("notes")}</span>
         <Button
           type="button"
           size="icon-sm"
@@ -99,7 +101,7 @@ export function NavNotes({ tree }: NavNotesProps) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>新建文件夹</DialogTitle>
+            <DialogTitle>{t("createFolder")}</DialogTitle>
             <DialogDescription>将在 Notes 根目录创建文件夹。</DialogDescription>
           </DialogHeader>
 
@@ -107,7 +109,7 @@ export function NavNotes({ tree }: NavNotesProps) {
             autoFocus
             value={folderName}
             onChange={(event) => setFolderName(event.target.value)}
-            placeholder="请输入文件夹名称"
+            placeholder={t("folderName")}
             // 回车直接确认创建，减少额外点击。
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -124,10 +126,10 @@ export function NavNotes({ tree }: NavNotesProps) {
               onClick={() => setOpen(false)}
               disabled={submitting}
             >
-              取消
+              {t("cancel")}
             </Button>
             <Button type="button" onClick={() => void handleCreateRootFolder()} disabled={submitting}>
-              确认
+              {t("confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

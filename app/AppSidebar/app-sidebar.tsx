@@ -32,9 +32,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { createSpace, getSpaceBootstrapState, listSpaces, switchSpace, type SpaceRecord } from "@/lib/hora-db"
+import { useT } from "@/lib/app-language"
 
 // 主 Sidebar：导航读取静态配置，Notes 通过 DB + IPC 实时同步。
 export function AppSidebar() {
+  const t = useT()
   // NotesTree 数据源：挂载后从 SQLite 加载并响应文件系统变化。
   const [notesTree, setNotesTree] = useState<NoteTreeNode[]>(sidebarData.workspace.notesTree)
   const [spaces, setSpaces] = useState<SpaceRecord[]>([])
@@ -78,7 +80,7 @@ export function AppSidebar() {
     }
   }, [])
 
-  const currentSpaceLabel = useMemo(() => currentSpace?.name || "创建空间", [currentSpace])
+  const currentSpaceLabel = useMemo(() => currentSpace?.name || t("createSpace"), [currentSpace, t])
 
   async function handleSwitchSpace(spaceId: string) {
     if (switchingSpaceId === spaceId) return
@@ -116,7 +118,7 @@ export function AppSidebar() {
                     <div className="min-w-0">
                       <span className="block truncate font-medium">{currentSpaceLabel}</span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {currentSpace?.rootPath || "选择一个空间目录开始使用"}
+                        {currentSpace?.rootPath || t("chooseSpaceToStart")}
                       </span>
                     </div>
                   </div>
@@ -125,7 +127,7 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-[--radix-popper-anchor-width] min-w-56 p-1.5">
-                <DropdownMenuLabel className="px-2.5 py-1.5 text-xs text-muted-foreground">空间列表</DropdownMenuLabel>
+                <DropdownMenuLabel className="px-2.5 py-1.5 text-xs text-muted-foreground">{t("spaceList")}</DropdownMenuLabel>
                 {spaces.map((space) => (
                   <DropdownMenuItem
                     key={space.id}
@@ -146,7 +148,7 @@ export function AppSidebar() {
 
                 <DropdownMenuItem className="gap-2 rounded-md px-2.5 py-2 text-muted-foreground" onClick={() => setSpaceDialogOpen(true)}>
                   <FolderPlus className="size-4" />
-                  创建空间
+                  {t("createSpace")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -159,10 +161,10 @@ export function AppSidebar() {
           <Tabs defaultValue="workspace" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="workspace" className="flex-1">
-                Workspace
+                {t("workspace")}
               </TabsTrigger>
               <TabsTrigger value="mail" className="flex-1">
-                Mail
+                {t("mail")}
               </TabsTrigger>
             </TabsList>
 
@@ -189,9 +191,9 @@ export function AppSidebar() {
       <SpaceDialog
         open={spaceDialogOpen}
         mode="create"
-        title="创建空间"
-        description="选择空间目录并填写空间名称，创建后会把数据、数据库和插件都放到这个空间下。"
-        submitLabel="创建并进入"
+        title={t("createSpaceTitle")}
+        description={t("createSpaceDescription")}
+        submitLabel={t("createAndEnter")}
         defaultName=""
         defaultPath=""
         onOpenChange={handleSpaceDialogChange}

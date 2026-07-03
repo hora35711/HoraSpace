@@ -41,6 +41,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ShimmerDemo } from "@/components/ui/shimmer"
 import { ArrowDown, ArrowUp, FolderUp, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react"
 import { SpaceDialog } from "@/components/space-dialog"
+import { getLanguageOptions, useAppLanguage, useT } from "@/lib/app-language"
 
 import {
   getCurrentSpace,
@@ -139,6 +140,8 @@ function MenuButton({
 }
 
 export default function SettingsPage() {
+  const t = useT()
+  const { language, setLanguage } = useAppLanguage()
   const [section, setSection] = React.useState<SettingsSection>("plugins")
   const [plugins, setPlugins] = React.useState<PluginRecord[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -182,7 +185,7 @@ export default function SettingsPage() {
     void loadPlugins()
     void getPluginRootPath().then((path) => setStoragePath(path))
     void loadSpaceState()
-  }, [loadPlugins])
+  }, [loadPlugins, loadSpaceState])
 
   React.useEffect(() => {
     // 空间发生切换或迁移时刷新当前空间信息，避免设置页显示旧路径。
@@ -335,8 +338,8 @@ export default function SettingsPage() {
   const storagePathLabel = storagePath || "正在加载插件存放路径..."
   const truncatedStoragePath =
     storagePathLabel.length > 34 ? `${storagePathLabel.slice(0, 18)}…${storagePathLabel.slice(-14)}` : storagePathLabel
-  const currentSpaceName = currentSpace?.name || "默认空间"
-  const currentSpacePath = currentSpace?.rootPath || "尚未创建空间"
+  const currentSpaceName = currentSpace?.name || t("chooseSpace")
+  const currentSpacePath = currentSpace?.rootPath || t("chooseSpaceToStart")
 
   return (
     <TooltipProvider>
@@ -344,15 +347,13 @@ export default function SettingsPage() {
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <Settings2 className="size-5 text-primary" />
-          <h1 className="text-2xl font-semibold tracking-tight">设置</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("settings")}</h1>
         </div>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          这里会作为所有全局设置的入口。
-        </p>
+        <p className="max-w-3xl text-sm text-muted-foreground">这里会作为所有全局设置的入口。</p>
         <div className="grid gap-3 md:grid-cols-2">
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>当前空间</CardDescription>
+              <CardDescription>{t("chooseSpace")}</CardDescription>
               <CardTitle className="text-base">{currentSpaceName}</CardTitle>
             </CardHeader>
             <CardContent className="pt-0 text-sm text-muted-foreground">
@@ -368,7 +369,7 @@ export default function SettingsPage() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>空间数量</CardDescription>
+              <CardDescription>{t("spaceList")}</CardDescription>
               <CardTitle className="text-base">{spaceList.length}</CardTitle>
             </CardHeader>
             <CardContent className="pt-0 text-sm text-muted-foreground">
@@ -381,49 +382,49 @@ export default function SettingsPage() {
       <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle className="text-base">设置菜单</CardTitle>
+            <CardTitle className="text-base">{t("settings")}</CardTitle>
             <CardDescription>后续的新设置项直接加在这里。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             <MenuButton
               active={section === "general"}
               icon={<SlidersHorizontal className="size-4" />}
-              label="基础设置"
+              label={t("general")}
               description="主题、布局、同步等常规选项"
               onClick={() => setSection("general")}
             />
             <MenuButton
               active={section === "language"}
               icon={<Settings2 className="size-4" />}
-              label="语言"
+              label={t("language")}
               description="界面语言、时间格式和区域偏好"
               onClick={() => setSection("language")}
             />
             <MenuButton
               active={section === "location"}
               icon={<Settings2 className="size-4" />}
-              label="位置"
+              label={t("location")}
               description="存储位置"
               onClick={() => setSection("location")}
             />
             <MenuButton
               active={section === "repository"}
               icon={<Settings2 className="size-4" />}
-              label="仓库"
+              label={t("repository")}
               description="仓库地址、同步源和分支策略"
               onClick={() => setSection("repository")}
             />
             <MenuButton
               active={section === "plugins"}
               icon={<FolderUp className="size-4" />}
-              label="插件管理"
+              label={t("plugins")}
               description="导入、启用、排序和编辑插件"
               onClick={() => setSection("plugins")}
             />
             <MenuButton
               active={section === "extensions"}
               icon={<Settings2 className="size-4" />}
-              label="扩展预留"
+              label={t("extensions")}
               description="其他模块和插件面板使用"
               onClick={() => setSection("extensions")}
             />
@@ -436,7 +437,7 @@ export default function SettingsPage() {
               <div className="grid gap-4 md:grid-cols-4">
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardDescription>插件总数</CardDescription>
+                    <CardDescription>{t("plugins")}</CardDescription>
                     <CardTitle className="text-3xl">{stats.total}</CardTitle>
                   </CardHeader>
                 </Card>
@@ -472,7 +473,7 @@ export default function SettingsPage() {
               <Card>
                 <CardHeader className="gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
-                    <CardTitle>插件管理</CardTitle>
+                    <CardTitle>{t("plugins")}</CardTitle>
                     <CardDescription>
                       上传后会自动复制到当前空间的插件目录。
                     </CardDescription>
@@ -480,11 +481,11 @@ export default function SettingsPage() {
                   <div className="flex flex-wrap gap-2">
                     <Button variant="outline" onClick={() => void handleRefresh()} disabled={savingKey === "refresh"}>
                       <RefreshCw className="mr-2 size-4" />
-                      刷新
+                      {t("refresh")}
                     </Button>
                     <Button onClick={() => void handleImportPlugin()} disabled={savingKey === "import"}>
                       <FolderUp className="mr-2 size-4" />
-                      导入插件包
+                      {t("import")}
                     </Button>
                   </div>
                 </CardHeader>
@@ -531,7 +532,7 @@ export default function SettingsPage() {
                       <EmptyContent className="flex-row justify-center">
                         <Button onClick={() => void handleImportPlugin()} disabled={savingKey === "import"}>
                           <FolderUp className="mr-2 size-4" />
-                          导入插件包
+                          {t("import")}
                         </Button>
                       </EmptyContent>
                     </Empty>
@@ -642,28 +643,30 @@ export default function SettingsPage() {
           ) : section === "language" ? (
             <Card>
               <CardHeader>
-                <CardTitle>语言</CardTitle>
+                <CardTitle>{t("language")}</CardTitle>
                 <CardDescription>界面语言、日期格式、时区和数字格式的预留区。</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
                 <div className="grid gap-2">
-                  <Label>界面语言</Label>
-                  <Select defaultValue="zh-CN">
+                  <Label>{t("interfaceLanguage")}</Label>
+                  <Select value={language} onValueChange={(value) => setLanguage(value as typeof language)}>
                     <SelectTrigger>
-                      <SelectValue placeholder="选择语言" />
+                      <SelectValue placeholder={t("chooseLanguage")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="zh-CN">简体中文</SelectItem>
-                      <SelectItem value="en-US">English (US)</SelectItem>
-                      <SelectItem value="ja-JP">日本語</SelectItem>
+                      {getLanguageOptions().map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label>日期格式</Label>
+                  <Label>{t("dateFormat")}</Label>
                   <Select defaultValue="YYYY-MM-DD">
                     <SelectTrigger>
-                      <SelectValue placeholder="选择格式" />
+                      <SelectValue placeholder={t("selectFormat")} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
@@ -677,12 +680,12 @@ export default function SettingsPage() {
           ) : section === "location" ? (
             <Card>
               <CardHeader>
-                <CardTitle>位置</CardTitle>
+                <CardTitle>{t("location")}</CardTitle>
                 <CardDescription>本地数据、附件、插件包和缓存的路径配置预留。</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4">
                 <div className="grid gap-2">
-                  <Label>当前空间路径</Label>
+                  <Label>{t("spacePath")}</Label>
                   <div className="rounded-lg border bg-muted/20 px-3 py-2">
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -696,7 +699,7 @@ export default function SettingsPage() {
                   <p className="text-xs text-muted-foreground">这里会承载当前空间的数据、数据库和插件目录，账号配置不随空间切换而移动。</p>
                 </div>
                 <div className="grid gap-2">
-                  <Label>插件存放路径</Label>
+                  <Label>{t("plugins")}</Label>
                   <Input value={storagePathLabel} readOnly />
                   <p className="text-xs text-muted-foreground">插件仍然复制到当前空间的 plugins 目录，导入后建议重启一次。</p>
                 </div>
@@ -713,7 +716,7 @@ export default function SettingsPage() {
           ) : section === "repository" ? (
             <Card>
               <CardHeader>
-                <CardTitle>仓库</CardTitle>
+                <CardTitle>{t("repository")}</CardTitle>
                 <CardDescription>仓库源、同步源、分支和版本策略的预留区。</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -730,7 +733,7 @@ export default function SettingsPage() {
                     <Label>同步策略</Label>
                     <Select defaultValue="manual">
                       <SelectTrigger>
-                        <SelectValue placeholder="选择策略" />
+                        <SelectValue placeholder={t("selectStrategy")} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="manual">手动同步</SelectItem>
@@ -759,7 +762,7 @@ export default function SettingsPage() {
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>编辑插件设置</DialogTitle>
+            <DialogTitle>{t("editSettings")}</DialogTitle>
             <DialogDescription>这里只调整插件管理元数据，不改插件内部业务逻辑。</DialogDescription>
           </DialogHeader>
 
@@ -794,7 +797,7 @@ export default function SettingsPage() {
                 onValueChange={(value) => setDraft((current) => ({ ...current, uiMode: value as PluginUiMode }))}
               >
                 <SelectTrigger id="plugin-mode">
-                  <SelectValue placeholder="选择展示模式" />
+                  <SelectValue placeholder={t("selectMode")} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="panel">panel</SelectItem>
@@ -835,10 +838,10 @@ export default function SettingsPage() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditorOpen(false)}>
-              取消
+              {t("cancel")}
             </Button>
             <Button onClick={() => void saveEditor()} disabled={savingKey === draft.pluginKey}>
-              保存
+              {t("save")}
             </Button>
           </DialogFooter>
         </DialogContent>
