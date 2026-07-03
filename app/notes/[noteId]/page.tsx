@@ -167,6 +167,12 @@ export default function NoteEditorPage() {
   const tabsRef = React.useRef<EditorTab[]>([{ id: "tab-1", label: "未命名", noteId: null }])
   // 内容加载序号：仅允许最后一次请求写入，防止 A/B 标签串内容。
   const loadSeqRef = React.useRef(0)
+  // 当前文件是否存在未保存修改：切换文件前先自动落盘。
+  const hasUnsavedChangesRef = React.useRef(false)
+  // 正在加载文件内容时不把初始化内容误判成编辑修改。
+  const isHydratingContentRef = React.useRef(false)
+  // 最近一次真正完成加载的 noteId：用于判断是否需要在切换前自动保存。
+  const loadedNoteIdRef = React.useRef<string | null>(null)
   // Excalidraw API 引用：用于导入 Mermaid 后直接写入场景。
   const excalidrawApiRef = React.useRef<ExcalidrawImperativeAPI | null>(null)
   // 画布实时场景缓存：保存时直接序列化，避免读取过期状态。
@@ -181,6 +187,12 @@ export default function NoteEditorPage() {
   const persistTabsState = React.useCallback((nextTabs: EditorTab[], nextActiveTabId: string) => {
     window.localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(nextTabs))
     window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, nextActiveTabId)
+  }, [])
+
+  // 当前编辑内容一旦发生实际修改，就把脏标记打开，后续切换文件时会自动保存。
+  const markUnsavedChanges = React.useCallback(() => {
+    if (isHydratingContentRef.current) return
+    hasUnsavedChangesRef.current = true
   }, [])
 
   // Markdown -> HTML 转换器。
@@ -267,9 +279,21 @@ export default function NoteEditorPage() {
       // 每次路由文件变化触发新序号，旧请求结果会被丢弃。
       const seq = ++loadSeqRef.current
       const currentNoteId = noteId ?? null
+      const previousLoadedNoteId = loadedNoteIdRef.current
       const isStale = () => {
         if (seq !== loadSeqRef.current) return true
         return false
+      }
+
+      // 先把旧文件保存掉，再加载新文件，避免切换后把未保存内容覆盖掉。
+      if (
+        previousLoadedNoteId &&
+        previousLoadedNoteId !== currentNoteId &&
+        hasUnsavedChangesRef.current &&
+        activeTab?.noteId === previousLoadedNoteId
+      ) {
+        await handleSave()
+        if (isStale()) return
       }
 
       // 关闭全部标签后停留在当前路由时显示空白页；点击左侧其它文件会继续加载。
@@ -290,18 +314,21 @@ export default function NoteEditorPage() {
       // 空白路由：不读取文件，保留当前标签的空白状态。
       if (!currentNoteId) {
         if (isStale()) return
+        loadedNoteIdRef.current = null
         setNoteFileKind("markdown")
         setTitle(activeTab?.label || "未命名")
         setPathParts([])
         setInitialHtml("")
         setEditorHtml("")
         setTextPreview("")
+        hasUnsavedChangesRef.current = false
         setDrawingInitialData(null)
         setDrawingReady(false)
         return
       }
 
       try {
+        isHydratingContentRef.current = true
         setError(null)
 
         const note = (await window.horaDB?.getNote(currentNoteId)) as NoteRecord | null
@@ -356,8 +383,10 @@ export default function NoteEditorPage() {
           setInitialHtml("")
           setEditorHtml("")
           setTextPreview("")
+          hasUnsavedChangesRef.current = false
           setDrawingInitialData(null)
           setDrawingReady(false)
+          loadedNoteIdRef.current = currentNoteId
           return
         }
 
@@ -385,11 +414,13 @@ export default function NoteEditorPage() {
           setInitialHtml("")
           setEditorHtml("")
           setTextPreview("")
+          hasUnsavedChangesRef.current = false
         } else if (getNoteFileKind(note?.filePath) === "text") {
           // 文本类文件进入纯文本编辑模式，保留原始换行和逗号/制表符结构。
           setTextPreview(text || "")
           setInitialHtml("")
           setEditorHtml("")
+          hasUnsavedChangesRef.current = false
           setDrawingInitialData(null)
           setDrawingReady(false)
         } else {
@@ -398,12 +429,16 @@ export default function NoteEditorPage() {
           setInitialHtml(html)
           setEditorHtml(html)
           setTextPreview("")
+          hasUnsavedChangesRef.current = false
           setDrawingInitialData(null)
           setDrawingReady(false)
         }
+        loadedNoteIdRef.current = currentNoteId
       } catch (err) {
         if (isStale()) return
         setError(err instanceof Error ? err.message : "加载笔记失败")
+      } finally {
+        isHydratingContentRef.current = false
       }
     }
 
@@ -449,6 +484,7 @@ export default function NoteEditorPage() {
         const markdown = turndown.turndown(editorHtml)
         await window.horaDB?.saveNoteContent({ noteId: currentNoteId, content: markdown })
       }
+      hasUnsavedChangesRef.current = false
       setLastSavedAt(new Date().toLocaleString())
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存失败")
@@ -560,26 +596,32 @@ export default function NoteEditorPage() {
 
   // 切换标签：有绑定笔记就跳转该笔记，没有则停留空白状态。
   const handleSwitchTab = (tabId: string) => {
-    persistTabsState(tabs, tabId)
-    activeTabIdRef.current = tabId
-    setActiveTabId(tabId)
-    setBlankRouteNoteId(null)
-    setBlankRouteOpenKey(null)
-    const target = tabs.find((tab) => tab.id === tabId)
-    // 立即清空旧内容，避免视觉上停留在上一个标签内容。
-    setInitialHtml("")
-    setEditorHtml("")
-    setTextPreview("")
-    setPathParts([])
-    setTitle(target?.label || "未命名")
-    if (target?.noteId) {
-      router.push(`/notes/${target.noteId}`)
-      return
-    }
+    const nextTarget = tabs.find((tab) => tab.id === tabId)
+    void (async () => {
+      // 切换标签前先自动保存当前标签内容，避免用户没点手动保存就丢失。
+      if (hasUnsavedChangesRef.current) {
+        await handleSave()
+      }
+
+      persistTabsState(tabs, tabId)
+      activeTabIdRef.current = tabId
+      setActiveTabId(tabId)
+      setBlankRouteNoteId(null)
+      setBlankRouteOpenKey(null)
+      // 立即清空旧内容，避免视觉上停留在上一个标签内容。
+      setInitialHtml("")
+      setEditorHtml("")
+      setTextPreview("")
+      setPathParts([])
+      setTitle(nextTarget?.label || "未命名")
+      if (nextTarget?.noteId) {
+        router.push(`/notes/${nextTarget.noteId}`)
+      }
+    })()
   }
 
   // 关闭指定标签：关闭当前标签时自动切换到相邻标签并同步内容与路由。
-  const handleCloseTab = (tabId: string) => {
+  const handleCloseTab = async (tabId: string) => {
     const closingIndex = tabs.findIndex((tab) => tab.id === tabId)
     if (closingIndex === -1) return
 
@@ -587,6 +629,11 @@ export default function NoteEditorPage() {
     const nextTabs = tabs.filter((tab) => tab.id !== tabId)
     const isClosingActive = activeTabIdRef.current === tabId
     setLastClosedTab(closingTab)
+
+    // 关闭当前标签前先自动保存，避免误关导致修改丢失。
+    if (isClosingActive && hasUnsavedChangesRef.current) {
+      await handleSave()
+    }
 
     // 最后一个标签也允许关闭，关闭后显示空白页。
     if (nextTabs.length === 0) {
@@ -746,6 +793,7 @@ export default function NoteEditorPage() {
                     onChange={(elements, appState, files) => {
                       // 实时缓存画布状态，供保存时直接序列化。
                       drawingSceneRef.current = { elements, appState, files }
+                      markUnsavedChanges()
                     }}
                   />
                 ) : (
@@ -759,7 +807,10 @@ export default function NoteEditorPage() {
               // 文本编辑：不进入富文本编辑器，保存时直接写回原始纯文本。
               <textarea
                 value={textPreview}
-                onChange={(event) => setTextPreview(event.target.value)}
+                onChange={(event) => {
+                  setTextPreview(event.target.value)
+                  markUnsavedChanges()
+                }}
                 spellCheck={false}
                 className="h-full w-full resize-none overflow-auto border-0 bg-card p-4 font-mono text-sm leading-6 text-foreground outline-none"
               />
@@ -785,7 +836,10 @@ export default function NoteEditorPage() {
                 key={`${activeTabId}:${activeTab?.noteId ?? "blank"}`}
                 contentKey={`${activeTabId}:${noteId ?? activeTab?.noteId ?? "blank"}`}
                 initialContent={initialHtml}
-                onContentChange={setEditorHtml}
+                onContentChange={(html) => {
+                  setEditorHtml(html)
+                  markUnsavedChanges()
+                }}
                 onSave={() => {
                   void handleSave()
                 }}
