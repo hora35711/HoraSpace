@@ -177,7 +177,12 @@ export function NotesTree({
               <div>
                 <SidebarMenuButton
                   className="h-8 gap-2 px-2 text-[12px]"
-                  onClick={() => {
+                  onClick={async () => {
+                    // 先等编辑页把当前文件自动保存完，再切到新文件。
+                    const bridge = window as Window & {
+                      horaNotesBeforeNavigate?: () => Promise<void>
+                    }
+                    await bridge.horaNotesBeforeNavigate?.()
                     // 追加 open 参数，保证同一文件重复点击也会触发打开动作。
                     router.push(`/notes/${item.id}?open=${Date.now()}`)
                   }}

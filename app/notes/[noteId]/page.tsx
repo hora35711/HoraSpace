@@ -491,6 +491,23 @@ export default function NoteEditorPage() {
     }
   }, [editorHtml, noteFileKind, tabs, textPreview, turndown])
 
+  // 左侧文件树切换文件前的统一保存回调：树组件会先等待这里完成，再执行路由跳转。
+  useEffect(() => {
+    const bridge = window as Window & {
+      horaNotesBeforeNavigate?: () => Promise<void>
+    }
+
+    bridge.horaNotesBeforeNavigate = async () => {
+      if (!hasUnsavedChangesRef.current) return
+      await handleSave()
+    }
+
+    return () => {
+      if (bridge.horaNotesBeforeNavigate === undefined) return
+      delete bridge.horaNotesBeforeNavigate
+    }
+  }, [handleSave])
+
   // 绘图/文本模式快捷键桥接：补齐 Markdown 编辑器已有的 Cmd/Ctrl + S 保存行为。
   useEffect(() => {
     // 非绘图/文本模式不挂载快捷键，避免影响现有 Markdown 编辑体验。
