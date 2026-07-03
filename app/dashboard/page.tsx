@@ -203,18 +203,18 @@ const statusPieChartConfig = {
 function getStatusDistributionClassName(status: string) {
   switch (status) {
     case "doing":
-      return "border-blue-200 bg-blue-50 text-blue-700"
+      return "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300"
     case "todo":
-      return "border-orange-200 bg-orange-50 text-orange-700"
+      return "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/40 dark:text-orange-300"
     case "done":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700"
+      return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/35 dark:text-emerald-300"
     case "cancelled":
     case "archived":
-      return "border-slate-200 bg-slate-50 text-slate-600"
+      return "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400"
     case "paused":
-      return "border-amber-200 bg-amber-50 text-amber-700"
+      return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
     default:
-      return "border-border bg-muted text-muted-foreground"
+      return "border-border bg-muted text-muted-foreground dark:bg-muted/70"
   }
 }
 
@@ -334,7 +334,7 @@ function DashboardMetricCard(props: {
             <CardDescription>{props.title}</CardDescription>
             <CardTitle className="text-3xl tracking-tight">{props.value}</CardTitle>
           </div>
-          <div className={cn("rounded-lg border p-2", props.toneClassName || "bg-muted")}>{props.icon}</div>
+          <div className={cn("rounded-lg border p-2", props.toneClassName || "bg-muted dark:bg-muted/70")}>{props.icon}</div>
         </div>
         <p className="text-xs text-muted-foreground">{props.description}</p>
       </CardHeader>
@@ -359,7 +359,7 @@ function ChartFrame(props: {
     <Card className={cn("overflow-hidden", props.className)}>
       <CardHeader className="space-y-1.5 pb-3">
         <div className="flex items-center gap-2">
-          <span className="rounded-md border bg-muted p-1.5 text-muted-foreground">{props.icon}</span>
+          <span className="rounded-md border bg-muted p-1.5 text-muted-foreground dark:bg-muted/70">{props.icon}</span>
           <CardTitle className="text-base">{props.title}</CardTitle>
         </div>
         <CardDescription>{props.description}</CardDescription>
@@ -375,7 +375,7 @@ function ChartFrame(props: {
 function ChartEmptyState(props: { title: string; description: string; icon: React.ReactNode }) {
   // 图表空态：保留卡片高度，但不让零数据图表硬撑版面。
   return (
-    <div className="flex min-h-[260px] items-center justify-center rounded-xl border border-dashed bg-muted/20 px-6 py-8">
+    <div className="flex min-h-[260px] items-center justify-center rounded-xl border border-dashed bg-muted/20 px-6 py-8 dark:bg-muted/10">
       <Empty className="border-0 p-0">
         <EmptyHeader>
           <EmptyMedia variant="icon">{props.icon}</EmptyMedia>
@@ -929,7 +929,7 @@ export default function DashboardPage() {
           value={String(projects.length)}
           description="当前作用域内的项目总数"
           icon={<Folder className="size-4" />}
-          toneClassName="bg-blue-50 text-blue-600 border-blue-200"
+          toneClassName="bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/60"
           progress={projectCompletion}
           footer={
             <span className="flex items-center justify-between">
@@ -943,7 +943,7 @@ export default function DashboardPage() {
           value={String(requirements.length)}
           description="需求条目和完成率"
           icon={<Target className="size-4" />}
-          toneClassName="bg-orange-50 text-orange-600 border-orange-200"
+          toneClassName="bg-orange-50 text-orange-600 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-900/60"
           progress={requirementCompletion}
           footer={
             <span className="flex items-center justify-between">
@@ -957,7 +957,7 @@ export default function DashboardPage() {
           value={String(tasks.length)}
           description="执行项、完成数和逾期数"
           icon={<CheckCircle2 className="size-4" />}
-          toneClassName="bg-emerald-50 text-emerald-600 border-emerald-200"
+          toneClassName="bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/35 dark:text-emerald-300 dark:border-emerald-900/60"
           progress={taskCompletion}
           footer={
             <span className="flex items-center justify-between">
@@ -971,7 +971,7 @@ export default function DashboardPage() {
           value={String(noteCount)}
           description="空间里的笔记文件数量"
           icon={<NotebookPen className="size-4" />}
-          toneClassName="bg-sky-50 text-sky-600 border-sky-200"
+          toneClassName="bg-sky-50 text-sky-600 border-sky-200 dark:bg-sky-950/35 dark:text-sky-300 dark:border-sky-900/60"
           footer={
             <span className="flex items-center justify-between">
               <span>关联 {linkedNoteCount} 条</span>
@@ -984,7 +984,7 @@ export default function DashboardPage() {
           value={`${overallCompletion}%`}
           description="项目、需求和任务的综合完成感"
           icon={<Activity className="size-4" />}
-          toneClassName="bg-violet-50 text-violet-600 border-violet-200"
+          toneClassName="bg-violet-50 text-violet-600 border-violet-200 dark:bg-violet-950/35 dark:text-violet-300 dark:border-violet-900/60"
           progress={overallCompletion}
           footer={
             <span className="flex items-center justify-between">
@@ -998,7 +998,7 @@ export default function DashboardPage() {
           value={String(overdueTaskCount)}
           description="需要马上处理的逾期任务"
           icon={<TriangleAlert className="size-4" />}
-          toneClassName="bg-rose-50 text-rose-600 border-rose-200"
+          toneClassName="bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-950/35 dark:text-rose-300 dark:border-rose-900/60"
           footer={
             <span className="flex items-center justify-between">
               <span>高优先级请先处理</span>
@@ -1390,7 +1390,7 @@ export default function DashboardPage() {
                     </article>
                   ))
                 ) : (
-                  <Empty className="rounded-xl border border-dashed bg-muted/20 py-8">
+                  <Empty className="rounded-xl border border-dashed bg-muted/20 py-8 dark:bg-muted/10">
                     <EmptyHeader>
                       <EmptyMedia variant="icon">
                         <PieChartIcon className="size-4" />
@@ -1455,7 +1455,7 @@ export default function DashboardPage() {
                     </article>
                   ))
                 ) : (
-                  <Empty className="rounded-xl border border-dashed bg-muted/20 py-8">
+                  <Empty className="rounded-xl border border-dashed bg-muted/20 py-8 dark:bg-muted/10">
                     <EmptyHeader>
                       <EmptyMedia variant="icon">
                         <PieChartIcon className="size-4" />

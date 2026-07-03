@@ -4,6 +4,15 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AppShell } from "@/app/app-shell"
 
+// 全局站点信息：浏览器标签页、SEO 元信息和 Electron 渲染标题都会复用。
+export const metadata = {
+  title: {
+    default: "HoraSpace",
+    template: "%s · HoraSpace",
+  },
+  description: "HoraSpace desktop app",
+}
+
 // RootLayout：Next.js App Router 的全局布局组件。
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

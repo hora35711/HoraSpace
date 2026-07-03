@@ -26,6 +26,8 @@ import {
 export function UserMenu() {
   // 点击菜单项时直接跳转，保持菜单行为和路由行为分离。
   const router = useRouter()
+  // 本地默认用户：与数据库初始化数据保持一致。
+  const localUserName = "本地用户"
 
   return (
     <DropdownMenu>
@@ -35,7 +37,7 @@ export function UserMenu() {
             <AvatarImage src="https://github.com/shadcn.png" />
             <AvatarFallback>CN</AvatarFallback>
           </Avatar>
-          <span className="truncate text-sm">用户A</span>
+          <span className="truncate text-sm">{localUserName}</span>
         </SidebarMenuButton>
       </DropdownMenuTrigger>
 

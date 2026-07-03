@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unused-vars */
 // Electron 主进程：启动窗口、注册 IPC，并桥接笔记变更事件。
 const path = require("node:path")
 const fs = require("node:fs")
@@ -294,6 +295,8 @@ function createMainWindow(rendererUrl) {
     height: 860,
     minWidth: 1080,
     minHeight: 720,
+    // 窗口标题直接使用 HoraSpace，保证系统标题栏、任务栏和打包包名一致。
+    title: "HoraSpace",
     // 先隐藏，等首帧渲染完成再显示，避免 mac 上出现“只有菜单栏、窗口没露出来”的错觉。
     show: false,
     // 统一使用 HoraSpace 品牌图标，确保窗口标题栏、任务栏和快捷方式视觉一致。
@@ -306,6 +309,7 @@ function createMainWindow(rendererUrl) {
   })
 
   mainWindow = win
+  win.setTitle("HoraSpace")
 
   const devUrl = process.env.ELECTRON_RENDERER_URL
   const targetUrl = devUrl || rendererUrl

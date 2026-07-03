@@ -874,7 +874,7 @@ export default function ProjectDetailPage() {
                     requirementOrderMap,
                   )
                   return (
-                    <Card key={requirement.id} className="flex h-full min-h-[420px] flex-col overflow-hidden border-border/70 bg-muted/30 p-3 shadow-sm">
+                    <Card key={requirement.id} className="flex h-full min-h-[420px] flex-col overflow-hidden border-border/70 bg-muted/30 p-3 shadow-sm dark:bg-muted/10">
                       <div className="mb-3 flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="truncate font-semibold">{requirement.title}</p>
@@ -897,7 +897,7 @@ export default function ProjectDetailPage() {
                           <RequirementDialog form={requirementForm} onFormChange={setRequirementForm} onSave={handleSaveRequirement} />
                         </Dialog>
                       </div>
-                      <div className="mb-3 rounded-xl border border-dashed border-border bg-background p-2 text-xs text-muted-foreground">
+                      <div className="mb-3 rounded-xl border border-dashed border-border bg-background p-2 text-xs text-muted-foreground dark:bg-muted/20">
                         <div className="flex items-center justify-between">
                           <span>开始 {project.startedAt || "未设置"}</span>
                           <span>结束 {project.dueAt || "未设置"}</span>
@@ -905,13 +905,13 @@ export default function ProjectDetailPage() {
                       </div>
                       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                         {requirementTasks.length === 0 ? (
-                          <div className="rounded-xl border border-dashed border-border bg-background px-3 py-6 text-center text-sm text-muted-foreground">
+                          <div className="rounded-xl border border-dashed border-border bg-background px-3 py-6 text-center text-sm text-muted-foreground dark:bg-muted/20">
                             还没有任务，先补一个吧。
                           </div>
                         ) : requirementTasks.map((task) => {
                           const done = task.isCompleted === 1 || task.status === "done"
                           return (
-                            <Card key={task.id} className={done ? "border-emerald-200 bg-emerald-50/70 p-3 shadow-none" : "border-border/70 bg-background/80 p-3 shadow-none"}>
+                            <Card key={task.id} className={done ? "border-emerald-200 bg-emerald-50/70 p-3 shadow-none dark:border-emerald-900/60 dark:bg-emerald-950/35" : "border-border/70 bg-background/80 p-3 shadow-none dark:bg-background/60"}>
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0">
                                   <p className={done ? "truncate text-sm font-medium text-muted-foreground line-through" : "truncate text-sm font-medium"}>
@@ -934,7 +934,7 @@ export default function ProjectDetailPage() {
                                   await refreshAll()
                                 }} />
                               </div>
-                              <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                          <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                                 <span>开始 {task.startedAt || "-"}</span>
                                 <span>计划 {task.dueAt || "-"}</span>
                               </div>
@@ -1165,8 +1165,8 @@ function sortRequirementsForDisplay(
 
 function getTaskRowClassName(task: TaskRecord) {
   if (task.status === "cancelled") return "bg-muted/60"
-  if (task.status === "doing") return "bg-slate-50/80"
-  if (task.status === "done" || task.isCompleted === 1) return "bg-emerald-50/70"
+  if (task.status === "doing") return "bg-slate-50/80 dark:bg-slate-900/50"
+  if (task.status === "done" || task.isCompleted === 1) return "bg-emerald-50/70 dark:bg-emerald-950/35"
   return ""
 }
 
@@ -1183,7 +1183,7 @@ function TaskStateToggle(props: {
       <button
         type="button"
         aria-label="取消状态"
-        className="flex size-4 items-center justify-center rounded-[4px] border border-border bg-muted text-muted-foreground"
+        className="flex size-4 items-center justify-center rounded-[4px] border border-border bg-muted text-muted-foreground dark:bg-muted/70"
         onClick={() => void (props.onStatusChange ? props.onStatusChange(props.task, "todo") : props.onToggle(props.task, false))}
       >
         <X className="size-3" />
@@ -1197,8 +1197,8 @@ function TaskStateToggle(props: {
       aria-label={done ? "取消完成" : "完成任务"}
       onClick={() => void props.onToggle(props.task, !done)}
       className={done
-        ? "flex size-4 items-center justify-center rounded-[4px] border border-sky-300 bg-sky-100 text-sky-700"
-        : "size-4 rounded-[4px] border border-input bg-background"
+        ? "flex size-4 items-center justify-center rounded-[4px] border border-sky-300 bg-sky-100 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-300"
+        : "size-4 rounded-[4px] border border-input bg-background dark:bg-background/60"
       }
     >
       {done ? <Check className="size-3" /> : null}
@@ -1424,7 +1424,7 @@ function RequirementList(props: {
             onDrop={() => void props.onDrop(row.id)}
             className={cn(
               "p-0 transition-colors",
-              done ? "border-emerald-200 bg-emerald-50/70" : "bg-background"
+              done ? "border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/60 dark:bg-emerald-950/35" : "bg-background dark:bg-background/60"
             )}
           >
             <div className="flex items-center gap-3 px-3 py-3 text-sm">
@@ -1546,7 +1546,7 @@ function TaskList(props: {
             onDrop={() => void props.onDrop(row.id)}
             className={cn(
               "p-0 transition-colors",
-              getTaskRowClassName(row) || "bg-background"
+              getTaskRowClassName(row) || "bg-background dark:bg-background/60"
             )}
           >
             <div className="flex items-center gap-3 px-3 py-3 text-sm">
@@ -1569,7 +1569,7 @@ function TaskList(props: {
                   <Badge variant="outline" className={cn("border", getPriorityToneClassName(row.priority))}>
                     {PRIORITY_TEXT[row.priority]}
                   </Badge>
-                  <Badge variant="outline" className="border-border bg-background text-muted-foreground">
+                  <Badge variant="outline" className="border-border bg-background text-muted-foreground dark:bg-background/60">
                     {row.requirementTitle || "无需求"}
                   </Badge>
                 </div>
@@ -1595,9 +1595,9 @@ function TaskList(props: {
                 aria-label={`拖动任务 ${row.title}`}
                 onDragStart={() => props.onDragStart(row.id)}
                 onDragEnd={() => props.onDragStart(null)}
-                className={cn(
-                  "shrink-0 border border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                  props.draggedId === row.id && "cursor-grabbing bg-muted"
+              className={cn(
+                  "shrink-0 border border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground dark:hover:bg-accent/30",
+                  props.draggedId === row.id && "cursor-grabbing bg-muted dark:bg-muted/70"
                 )}
               >
                 <GripVertical className="size-4" />
@@ -1607,7 +1607,7 @@ function TaskList(props: {
         )
       })}
       {props.rows.length === 0 ? (
-        <Empty className="rounded-xl border border-dashed bg-background py-8">
+        <Empty className="rounded-xl border border-dashed bg-background py-8 dark:bg-muted/10">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <Plus className="size-4" />
@@ -1812,7 +1812,7 @@ function SimpleGantt(props: {
                 ? sortTasksForDisplay(row.items as TaskRecord[])
                 : [{ id: `${row.id}:empty`, title: "暂无任务", startedAt: null, dueAt: null, completedAt: null, status: "todo", priority: "normal", isCompleted: 0 as 0 | 1 }]
             return (
-                <div key={row.id} className="rounded-xl border border-border/70 bg-muted/20 p-2.5 shadow-sm">
+                <div key={row.id} className="rounded-xl border border-border/70 bg-muted/20 p-2.5 shadow-sm dark:bg-muted/10">
                 <div className="mb-2 flex items-center justify-between px-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold">{row.title}</p>
@@ -1832,7 +1832,7 @@ function SimpleGantt(props: {
                     const done = ganttTask.isCompleted === 1 || ganttTask.status === "done"
                     const progressWidth = done ? 100 : Math.max(15, Math.min(100, Math.round((span / dayColumns.length) * 100)))
                     return (
-                      <div key={ganttTask.id} className="rounded-lg border border-border/70 bg-background/80 p-3 shadow-none">
+                      <div key={ganttTask.id} className="rounded-lg border border-border/70 bg-background/80 p-3 shadow-none dark:bg-background/60">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className={done ? "truncate text-sm font-medium text-muted-foreground line-through" : "truncate text-sm font-medium"}>{ganttTask.title}</p>
@@ -1944,7 +1944,7 @@ function EntityForm<TStatus extends string, TForm extends EntityFormState<TStatu
               type="button"
               aria-label={`选择颜色 ${color}`}
               onClick={() => props.onFormChange({ ...props.form, color })}
-              className={props.form.color === color ? "size-7 rounded-full border-2 border-slate-400" : "size-7 rounded-full border border-border"}
+              className={props.form.color === color ? "size-7 rounded-full border-2 border-slate-400 dark:border-slate-500" : "size-7 rounded-full border border-border dark:border-border/70"}
               style={{ backgroundColor: color }}
             />
           ))}

@@ -310,7 +310,7 @@ export default function TasksPage() {
       </section>
 
       <section className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border bg-card shadow-sm">
-        <div className="sticky top-0 z-10 grid grid-cols-[1.5fr_0.8fr_0.8fr_1fr_1fr_0.8fr_1fr_0.5fr] border-b bg-muted/50 px-4 py-2 text-xs font-medium text-muted-foreground">
+        <div className="sticky top-0 z-10 grid grid-cols-[1.5fr_0.8fr_0.8fr_1fr_1fr_0.8fr_1fr_0.5fr] border-b bg-muted/50 px-4 py-2 text-xs font-medium text-muted-foreground dark:bg-muted/20">
           <span>任务</span>
           <span>状态</span>
           <span>优先级</span>
@@ -327,16 +327,19 @@ export default function TasksPage() {
             <article key={task.id} className="grid grid-cols-[1.5fr_0.8fr_0.8fr_1fr_1fr_0.8fr_1fr_0.5fr] items-center border-b px-4 py-3 text-sm last:border-b-0">
               <div className="flex min-w-0 items-center gap-3">
                 <TaskStateToggle task={task} onToggle={handleToggleDone} onStatusChange={handleChangeStatus} />
-                <span className="size-3 rounded-full border border-border" style={{ backgroundColor: task.color || "#8AA8E8" }} />
+                <span
+                  className="size-3 rounded-full border border-border dark:border-border/70"
+                  style={{ backgroundColor: task.color || "#8AA8E8" }}
+                />
                 <span className={done ? "truncate font-medium text-muted-foreground line-through" : "truncate font-medium"}>{task.title}</span>
               </div>
               <Select
                 value={task.status}
                 onValueChange={(value) => void handleChangeStatus(task, value as TaskStatus)}
               >
-                <SelectTrigger size="sm" className={cn("w-28 text-xs", getStatusToneClassName(task.status))}>
-                  <SelectValue />
-                </SelectTrigger>
+              <SelectTrigger size="sm" className={cn("w-28 text-xs", getStatusToneClassName(task.status))}>
+                <SelectValue />
+              </SelectTrigger>
                 <SelectContent>
                   {Object.entries(TASK_STATUS_TEXT).map(([value, label]) => (
                     <SelectItem key={value} value={value}>
@@ -383,7 +386,7 @@ export default function TasksPage() {
       </section>
 
       {tasks.length === 0 ? (
-        <Empty className="mt-4 rounded-xl border border-dashed bg-card py-10">
+        <Empty className="mt-4 rounded-xl border border-dashed bg-card py-10 dark:bg-muted/10">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               {(filters.statuses || []).includes("done") ? <CheckCircle2 className="size-4" /> : <Circle className="size-4" />}
@@ -531,7 +534,7 @@ function TaskStateToggle(props: {
         type="button"
         aria-label="恢复任务"
         onClick={() => void props.onStatusChange(props.task, "todo")}
-        className="flex size-4 items-center justify-center rounded-[4px] border border-border bg-muted text-muted-foreground"
+        className="flex size-4 items-center justify-center rounded-[4px] border border-border bg-muted text-muted-foreground dark:bg-muted/70"
       >
         <X className="size-3" />
       </button>
@@ -544,8 +547,8 @@ function TaskStateToggle(props: {
       aria-label={done ? "取消完成" : "完成任务"}
       onClick={() => void props.onToggle(props.task, !done)}
       className={done
-        ? "flex size-4 items-center justify-center rounded-[4px] border border-sky-300 bg-sky-100 text-sky-700"
-        : "size-4 rounded-[4px] border border-input bg-background"
+        ? "flex size-4 items-center justify-center rounded-[4px] border border-sky-300 bg-sky-100 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-300"
+        : "size-4 rounded-[4px] border border-input bg-background dark:bg-background/60"
       }
     >
       {done ? <Check className="size-3" /> : null}

@@ -323,7 +323,10 @@ export default function ProjectsPage() {
                 {PRIORITY_TEXT[project.priority]}
               </Badge>
               <span>
-                <span className="inline-flex size-4 rounded-full border border-border" style={{ backgroundColor: project.color || "#8AA8E8" }} />
+                <span
+                  className="inline-flex size-4 rounded-full border border-border dark:border-border/70"
+                  style={{ backgroundColor: project.color || "#8AA8E8" }}
+                />
               </span>
               <span>{project.sortOrder}</span>
               <span className="text-xs text-muted-foreground">{project.updatedAt?.slice(0, 10)}</span>
@@ -392,31 +395,34 @@ export default function ProjectsPage() {
                       <h3 className="truncate text-lg font-semibold group-hover:underline">{project.title}</h3>
                       <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{project.description || "暂无描述"}</p>
                     </div>
-                    <span className="inline-flex size-4 rounded-full border border-border" style={{ backgroundColor: project.color || "#8AA8E8" }} />
+                    <span
+                      className="inline-flex size-4 rounded-full border border-border dark:border-border/70"
+                      style={{ backgroundColor: project.color || "#8AA8E8" }}
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                    <div className="rounded-xl border bg-background px-3 py-2">
+                    <div className="rounded-xl border bg-background px-3 py-2 dark:bg-muted/20">
                       <span className="block text-[11px]">状态</span>
                       <Badge variant="outline" className={getStatusToneClassName(project.status)}>
                         {STATUS_TEXT[project.status]}
                       </Badge>
                     </div>
-                    <div className="rounded-xl border bg-background px-3 py-2">
+                    <div className="rounded-xl border bg-background px-3 py-2 dark:bg-muted/20">
                       <span className="block text-[11px]">优先级</span>
                       <Badge variant="outline" className={getPriorityToneClassName(project.priority)}>
                         {PRIORITY_TEXT[project.priority]}
                       </Badge>
                     </div>
-                    <div className="rounded-xl border bg-background px-3 py-2">
+                    <div className="rounded-xl border bg-background px-3 py-2 dark:bg-muted/20">
                       <span className="block text-[11px]">开始</span>
                       <span className="block font-medium text-foreground">{project.startedAt || "未设置"}</span>
                     </div>
-                    <div className="rounded-xl border bg-background px-3 py-2">
+                    <div className="rounded-xl border bg-background px-3 py-2 dark:bg-muted/20">
                       <span className="block text-[11px]">计划结束</span>
                       <span className="block font-medium text-foreground">{project.dueAt || "未设置"}</span>
                     </div>
                   </div>
-                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted dark:bg-muted/60">
                     <div className="h-2 rounded-full bg-[linear-gradient(90deg,#8AA8E8_0%,#8CC9A1_100%)]" style={{ width: project.startedAt && project.dueAt ? "100%" : "45%" }} />
                   </div>
                 </Card>
@@ -567,7 +573,7 @@ function ProjectDialog(props: {
                 type="button"
                 aria-label={`选择颜色 ${color}`}
                 onClick={() => onFormChange({ ...form, color })}
-                className={form.color === color ? "size-7 rounded-full border-2 border-slate-400" : "size-7 rounded-full border border-border"}
+                className={form.color === color ? "size-7 rounded-full border-2 border-slate-400 dark:border-slate-500" : "size-7 rounded-full border border-border dark:border-border/70"}
                 style={{ backgroundColor: color }}
               />
             ))}
@@ -622,7 +628,7 @@ function ProjectGantt(props: {
               <Link
                 key={project.id}
                 href={`/projects/${project.id}?view=gantt`}
-                className="grid items-center gap-2 rounded-xl border bg-card px-3 py-3 shadow-sm transition hover:bg-accent/30"
+                className="grid items-center gap-2 rounded-xl border bg-card px-3 py-3 shadow-sm transition hover:bg-accent/30 dark:hover:bg-accent/20"
                 onClick={() => saveProjectsDetailSnapshot(project.id, "gantt")}
                 style={{ gridTemplateColumns: `240px repeat(${dayColumns.length}, minmax(22px, 1fr))` }}
               >
@@ -638,7 +644,7 @@ function ProjectGantt(props: {
                 </div>
                 <div className="relative col-span-full grid" style={{ gridTemplateColumns: `240px repeat(${dayColumns.length}, minmax(22px, 1fr))` }}>
                   <div
-                    className="col-start-2 row-start-1 my-1.5 h-7 rounded-lg px-2 py-1 text-xs text-white/90 shadow-sm"
+                    className="col-start-2 row-start-1 my-1.5 h-7 rounded-lg px-2 py-1 text-xs text-white/90 shadow-sm dark:text-white/85"
                     style={{
                       gridColumn: `${startIndex + 2} / span ${Math.min(span, dayColumns.length - startIndex)}`,
                       backgroundColor: project.color || "#8AA8E8",

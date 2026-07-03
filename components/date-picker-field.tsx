@@ -21,7 +21,7 @@ export function DatePickerField(props: DatePickerFieldProps) {
 
   return (
     <div className="space-y-2">
-      <label htmlFor={props.id} className="text-xs text-neutral-500">
+      <label htmlFor={props.id} className="text-xs text-muted-foreground">
         {props.label}
       </label>
       <Popover>
@@ -33,7 +33,7 @@ export function DatePickerField(props: DatePickerFieldProps) {
             className="h-9 w-full justify-between px-3 text-sm font-normal"
           >
             <span className="truncate">{props.value || props.placeholder || "请选择日期"}</span>
-            <CalendarDays className="size-4 text-neutral-500" />
+            <CalendarDays className="size-4 text-muted-foreground" />
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-auto p-0">
@@ -72,4 +72,3 @@ function parseDateValue(value: string) {
 function formatDateValue(date: Date) {
   return date.toISOString().slice(0, 10)
 }
-
