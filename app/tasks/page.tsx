@@ -2,7 +2,7 @@
 
 // 全局 Tasks 页面：跨项目展示同一张 tasks 表中的执行项。
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import {
   Check,
@@ -114,13 +114,14 @@ export default function TasksPage() {
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null)
   const [taskForm, setTaskForm] = useState(() => createDefaultTaskForm())
   const [error, setError] = useState<string | null>(null)
+  const filtersRef = useRef<TaskFilters>(EMPTY_FILTERS)
 
   const refreshTasks = useCallback(
-    async (nextFilters = filters) => {
-      const rows = await listAllTasks(nextFilters)
+    async (nextFilters?: TaskFilters) => {
+      const rows = await listAllTasks(nextFilters ?? filtersRef.current)
       setTasks(sortTasksForDisplay(rows))
     },
-    [filters]
+    []
   )
 
   useEffect(() => {
@@ -128,6 +129,7 @@ export default function TasksPage() {
       try {
         setError(null)
         const savedFilters = loadSavedTaskFilters()
+        filtersRef.current = savedFilters
         setFilters(savedFilters)
 
         const projectRows = await listProjects()
@@ -175,6 +177,7 @@ export default function TasksPage() {
 
   const updateFilters = async (nextFilters: TaskFilters) => {
     const normalizedFilters = normalizeTaskFilters(nextFilters)
+    filtersRef.current = normalizedFilters
     setFilters(normalizedFilters)
     window.localStorage.setItem(
       TASK_FILTER_STORAGE_KEY,
@@ -452,9 +455,6 @@ export default function TasksPage() {
         {tasks.map((task) => {
           const done = task.isCompleted === 1 || task.status === "done"
 
-          // @ts-ignore
-          // @ts-ignore
-          // @ts-ignore
           return (
             <article
               key={task.id}
@@ -694,7 +694,7 @@ function TaskEditDialog(props: {
           <div className="space-y-2">
             <Label>项目</Label>
             <Select
-              value={props.form.projectId}
+              value={props.form.projectId || undefined}
               onValueChange={(value) =>
                 props.onFormChange({
                   ...props.form,

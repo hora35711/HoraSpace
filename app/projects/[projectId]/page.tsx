@@ -99,6 +99,27 @@ const ALL_FILTER_VALUE = "__all__"
 
 type ProjectViewMode = "list" | "board" | "gantt"
 
+// 新建任务默认从今天开始，计划五天后结束，和全局任务页保持一致。
+function createDefaultTaskDates() {
+  const startedAt = formatLocalDate(new Date())
+  const dueAt = formatLocalDate(addDaysLocal(new Date(), 5))
+  return { startedAt, dueAt }
+}
+
+// 日期按本地日历日格式化，避免 UTC 转换带来日期偏移。
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, "0")
+  const day = `${date.getDate()}`.padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function addDaysLocal(date: Date, days: number) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
 type ProjectFocusTarget = {
   kind: "requirement" | "task"
   id: string
@@ -451,6 +472,7 @@ export default function ProjectDetailPage() {
   }
 
   const openCreateTask = () => {
+    const { startedAt, dueAt } = createDefaultTaskDates()
     setTaskForm({
       id: "",
       title: "",
@@ -459,8 +481,8 @@ export default function ProjectDetailPage() {
       priority: "normal",
       color: COLOR_OPTIONS[0],
       requirementId: "",
-      startedAt: "",
-      dueAt: "",
+      startedAt,
+      dueAt,
       completedAt: "",
     })
   }
