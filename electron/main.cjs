@@ -5,6 +5,7 @@ const fs = require("node:fs")
 const http = require("node:http")
 const { pathToFileURL } = require("node:url")
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron")
+const updater = require("./updater.cjs")
 
 let mainWindow = null
 let db = null
@@ -82,6 +83,13 @@ function notifyNotesChanged() {
 function notifySpacesChanged() {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send("spaces-changed")
+  }
+}
+
+// 广播更新状态：设置页可实时展示检查结果和新版信息。
+function notifyUpdateStatus(status) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("updates:status-changed", status)
   }
 }
 
@@ -204,6 +212,11 @@ function registerDbIpc() {
     app.exit(0)
     return true
   })
+
+  ipcMain.handle("updates:getSettings", () => updater.getUpdateSnapshot())
+  ipcMain.handle("updates:setSettings", (_event, input) => updater.setUpdateSettings(input))
+  ipcMain.handle("updates:checkNow", () => updater.checkForUpdates("manual"))
+  ipcMain.handle("updates:openReleasePage", (_event, releaseUrl) => updater.openReleasePage(releaseUrl))
 
   // 空间管理：账号级注册表，和空间数据路径分开存放。
   ipcMain.handle("db:spaces:bootstrapState", () => space.getSpaceBootstrapState())
@@ -452,6 +465,7 @@ function waitForServer(url, timeoutMs = 30000) {
 
 app.whenReady().then(async () => {
   installPackagedLogger()
+  updater.setUpdateStatusBroadcaster(notifyUpdateStatus)
 
   try {
     loadRuntimeModules()
@@ -471,6 +485,7 @@ app.whenReady().then(async () => {
     })
 
     registerDbIpc()
+    updater.scheduleConfiguredUpdateCheck()
   } catch (error) {
     showPackagedStartupError("初始化本地数据失败", error)
     app.quit()

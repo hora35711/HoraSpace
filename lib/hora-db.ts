@@ -140,6 +140,41 @@ export type TaskFilters = {
   isCompleted?: boolean | ""
 }
 
+export type UpdateSettings = {
+  enabled: boolean
+  schedule: "startup" | "daily"
+  dailyHour: number
+  lastCheckedAt: string | null
+}
+
+export type UpdateReleaseInfo = {
+  version: string
+  tagName: string
+  name: string
+  publishedAt: string | null
+  releaseUrl: string
+  summary: string
+  body: string
+  assets: {
+    name: string
+    size: number
+    downloadUrl: string
+  }[]
+}
+
+export type UpdateStatus = {
+  state: "idle" | "checking" | "available" | "not-available" | "error"
+  currentVersion: string
+  update: UpdateReleaseInfo | null
+  error: string | null
+  checkedAt: string | null
+}
+
+export type UpdateSnapshot = {
+  settings: UpdateSettings
+  status: UpdateStatus
+}
+
 function requireHoraDB() {
   if (typeof window !== "undefined" && window.horaDB) {
     return window.horaDB
@@ -349,6 +384,52 @@ export async function importPluginPackage() {
 
 export async function restartApp() {
   return requireHoraDB().restartApp()
+}
+
+export async function getUpdateSnapshot(): Promise<UpdateSnapshot> {
+  if (typeof window !== "undefined" && window.horaDB?.getUpdateSnapshot) return window.horaDB.getUpdateSnapshot()
+  return {
+    settings: {
+      enabled: false,
+      schedule: "daily",
+      dailyHour: 10,
+      lastCheckedAt: null,
+    },
+    status: {
+      state: "idle",
+      currentVersion: "0.0.0",
+      update: null,
+      error: null,
+      checkedAt: null,
+    },
+  }
+}
+
+export async function setUpdateSettings(input: Partial<UpdateSettings>): Promise<UpdateSettings> {
+  if (typeof window !== "undefined" && window.horaDB?.setUpdateSettings) return window.horaDB.setUpdateSettings(input)
+  return {
+    enabled: Boolean(input.enabled),
+    schedule: input.schedule === "startup" ? "startup" : "daily",
+    dailyHour: typeof input.dailyHour === "number" ? input.dailyHour : 10,
+    lastCheckedAt: input.lastCheckedAt ?? null,
+  }
+}
+
+export async function checkForUpdates(): Promise<UpdateStatus> {
+  if (typeof window !== "undefined" && window.horaDB?.checkForUpdates) return window.horaDB.checkForUpdates()
+  return {
+    state: "error",
+    currentVersion: "0.0.0",
+    update: null,
+    error: "当前不是 Electron 运行环境，无法检查更新",
+    checkedAt: new Date().toISOString(),
+  }
+}
+
+export async function openReleasePage(releaseUrl?: string) {
+  if (typeof window !== "undefined" && window.horaDB?.openReleasePage) return window.horaDB.openReleasePage(releaseUrl)
+  if (releaseUrl) window.open(releaseUrl, "_blank", "noopener,noreferrer")
+  return Boolean(releaseUrl)
 }
 
 export async function getSpaceBootstrapState(): Promise<{

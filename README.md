@@ -41,6 +41,9 @@ npm run electron:dev
 - `npm run dist:win:arm64`：在 Windows 本机打包 Windows arm64 安装包
 - `npm run dist:github:mac`：通过 GitHub Actions 远程打 macOS 安装包
 - `npm run dist:github:win`：通过 GitHub Actions 远程打 Windows 安装包
+- `npm run release:patch`：创建补丁版本发布提交和 tag
+- `npm run release:minor`：创建小版本发布提交和 tag
+- `npm run release:major`：创建大版本发布提交和 tag
 
 ## 打包说明
 
@@ -99,6 +102,27 @@ npm run dist:github:win
 ```
 
 如果没有安装 `gh`，也可以手动打开 GitHub 仓库，进入 `Actions`，选择 `Build macOS` 或 `Build Windows`，再点击 `Run workflow`。
+
+## 软件更新与正式发布
+
+HoraSpace 第一版更新机制只做“检查新版、展示简介、跳转下载”，不会自动下载或自动安装。应用内更新源固定为 GitHub Releases：
+
+```text
+https://github.com/hora35711/HoraSpace/releases
+```
+
+正式版本只通过 `vX.Y.Z` tag 发布。发布补丁版本时可以执行：
+
+```bash
+npm run release:patch
+git push origin main vX.Y.Z
+```
+
+其中 `vX.Y.Z` 替换为脚本输出的 tag。推送 tag 后，`.github/workflows/release.yml` 会同时构建 Windows x64、Windows arm64 和 macOS dmg，并上传到同一个 GitHub Release。
+
+Release 正文会作为应用内“版本简介”的来源：第一段会显示在设置页，完整内容通过“前往下载”按钮在浏览器中查看。
+
+自动下载、自动安装和重启安装能力目前只预留设置与接口位置，后续需要签名、公证和更完整的安装流程后再开启。
 
 ## 平台注意事项
 

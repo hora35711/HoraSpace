@@ -21,6 +21,9 @@
     "dist:win:arm64": "node scripts/ensure-windows-host.mjs && npm run setup && npm run build && npm run prepare:electron && electron-builder --win --arm64 --publish never && npm run prepare:release-assets",
     "dist:github:mac": "node scripts/run-github-workflow.mjs build-mac.yml",
     "dist:github:win": "node scripts/run-github-workflow.mjs build-windows.yml",
+    "release:patch": "node scripts/create-release-version.mjs patch",
+    "release:minor": "node scripts/create-release-version.mjs minor",
+    "release:major": "node scripts/create-release-version.mjs major",
     "electron:dev": "node scripts/run-electron-dev.mjs",
     "electron:prod": "npm run build && concurrently \"npm run start\" \"npx wait-on http://localhost:3000 && cd electron && npm run start\""
   },
@@ -101,6 +104,7 @@
       "electron/preload.cjs",
       "electron/db.cjs",
       "electron/space.cjs",
+      "electron/updater.cjs",
       "electron/resources/**/*",
       "electron/node_modules/**/*"
     ],

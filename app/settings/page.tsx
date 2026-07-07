@@ -5,15 +5,21 @@ import * as React from "react"
 import {
   getPlugin,
   getPluginRootPath,
+  getUpdateSnapshot,
   importPluginPackage,
   listPlugins,
+  checkForUpdates,
+  openReleasePage,
   refreshPlugins,
   reorderPlugins,
   restartApp,
   setPluginEnabled,
+  setUpdateSettings,
   updatePlugin,
   type PluginRecord,
   type PluginUiMode,
+  type UpdateSettings,
+  type UpdateStatus,
 } from "@/lib/hora-db"
 
 import { Badge } from "@/components/ui/badge"
@@ -39,7 +45,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ShimmerDemo } from "@/components/ui/shimmer"
-import { ArrowDown, ArrowUp, FolderUp, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react"
+import { ArrowDown, ArrowUp, ExternalLink, FolderUp, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react"
 import { SpaceDialog } from "@/components/space-dialog"
 import { getLanguageOptions, useAppLanguage, useT } from "@/lib/app-language"
 
@@ -70,6 +76,40 @@ const DEFAULT_DRAFT: PluginDraft = {
   version: "1.0.0",
   uiMode: "panel",
   settingsJson: "{}",
+}
+
+const DEFAULT_UPDATE_SETTINGS: UpdateSettings = {
+  enabled: false,
+  schedule: "daily",
+  dailyHour: 10,
+  lastCheckedAt: null,
+}
+
+const DEFAULT_UPDATE_STATUS: UpdateStatus = {
+  state: "idle",
+  currentVersion: "0.0.0",
+  update: null,
+  error: null,
+  checkedAt: null,
+}
+
+function formatDateTime(value: string | null) {
+  // 设置页仅做轻量展示，非法日期直接显示“暂未记录”。
+  if (!value) return "暂未记录"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "暂未记录"
+  return date.toLocaleString("zh-CN", { hour12: false })
+}
+
+function updateStateLabel(state: UpdateStatus["state"]) {
+  const labels: Record<UpdateStatus["state"], string> = {
+    idle: "尚未检查",
+    checking: "正在检查",
+    available: "发现新版本",
+    "not-available": "已是最新",
+    error: "检查失败",
+  }
+  return labels[state]
 }
 
 function safeParseManifest(raw: string): PluginRecord["manifest"] {
@@ -155,6 +195,9 @@ export default function SettingsPage() {
   const [spaceList, setSpaceList] = React.useState<SpaceRecord[]>([])
   const [storagePath, setStoragePath] = React.useState("")
   const [draft, setDraft] = React.useState<PluginDraft>(DEFAULT_DRAFT)
+  const [updateSettings, setUpdateSettingsState] = React.useState<UpdateSettings>(DEFAULT_UPDATE_SETTINGS)
+  const [updateStatus, setUpdateStatus] = React.useState<UpdateStatus>(DEFAULT_UPDATE_STATUS)
+  const [checkingUpdate, setCheckingUpdate] = React.useState(false)
 
   const loadPlugins = React.useCallback(async () => {
     setLoading(true)
@@ -185,6 +228,10 @@ export default function SettingsPage() {
     void loadPlugins()
     void getPluginRootPath().then((path) => setStoragePath(path))
     void loadSpaceState()
+    void getUpdateSnapshot().then((snapshot) => {
+      setUpdateSettingsState(snapshot.settings)
+      setUpdateStatus(snapshot.status)
+    })
   }, [loadPlugins, loadSpaceState])
 
   React.useEffect(() => {
@@ -193,9 +240,14 @@ export default function SettingsPage() {
       void loadSpaceState()
       void getPluginRootPath().then((path) => setStoragePath(path))
     })
+    const unsubscribeUpdates = window.horaDB?.onUpdateStatusChanged?.((status) => {
+      setUpdateStatus(status)
+      setCheckingUpdate(status.state === "checking")
+    })
 
     return () => {
       unsubscribeSpaces?.()
+      unsubscribeUpdates?.()
     }
   }, [loadSpaceState])
 
@@ -217,6 +269,27 @@ export default function SettingsPage() {
     } finally {
       setSavingKey(null)
     }
+  }
+
+  async function saveUpdateSettings(input: Partial<UpdateSettings>) {
+    const next = await setUpdateSettings({ ...updateSettings, ...input })
+    setUpdateSettingsState(next)
+  }
+
+  async function handleCheckUpdates() {
+    setCheckingUpdate(true)
+    try {
+      const status = await checkForUpdates()
+      setUpdateStatus(status)
+      const snapshot = await getUpdateSnapshot()
+      setUpdateSettingsState(snapshot.settings)
+    } finally {
+      setCheckingUpdate(false)
+    }
+  }
+
+  async function handleOpenReleasePage() {
+    await openReleasePage(updateStatus.update?.releaseUrl)
   }
 
   async function handleImportPlugin() {
@@ -640,6 +713,140 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
             </>
+          ) : section === "general" ? (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader className="gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <CardTitle>软件更新</CardTitle>
+                    <CardDescription>
+                      第一版只检查 GitHub Release 并提示下载，不会自动下载或自动安装。
+                    </CardDescription>
+                  </div>
+                  <Badge variant={updateStatus.state === "available" ? "default" : "secondary"}>
+                    {updateStateLabel(updateStatus.state)}
+                  </Badge>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="rounded-lg border bg-muted/20 p-3">
+                      <p className="text-xs text-muted-foreground">当前版本</p>
+                      <p className="mt-1 text-lg font-semibold">{updateStatus.currentVersion}</p>
+                    </div>
+                    <div className="rounded-lg border bg-muted/20 p-3">
+                      <p className="text-xs text-muted-foreground">最近检查</p>
+                      <p className="mt-1 text-sm">{formatDateTime(updateSettings.lastCheckedAt || updateStatus.checkedAt)}</p>
+                    </div>
+                    <div className="rounded-lg border bg-muted/20 p-3">
+                      <p className="text-xs text-muted-foreground">更新源</p>
+                      <p className="mt-1 truncate text-sm">GitHub Releases</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-[1fr_220px_160px]">
+                    <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                      <div>
+                        <Label>自动检查更新</Label>
+                        <p className="mt-1 text-xs text-muted-foreground">开启后按规则检查新版，但不会自动下载安装。</p>
+                      </div>
+                      <Switch
+                        checked={updateSettings.enabled}
+                        onCheckedChange={(checked) => void saveUpdateSettings({ enabled: checked })}
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>检查规则</Label>
+                      <Select
+                        value={updateSettings.schedule}
+                        onValueChange={(value) => void saveUpdateSettings({ schedule: value as UpdateSettings["schedule"] })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择规则" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="daily">每天固定时间</SelectItem>
+                          <SelectItem value="startup">每次启动后</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>每日小时</Label>
+                      <Select
+                        value={String(updateSettings.dailyHour)}
+                        onValueChange={(value) => void saveUpdateSettings({ dailyHour: Number.parseInt(value, 10) })}
+                        disabled={updateSettings.schedule !== "daily"}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择时间" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 24 }, (_, hour) => (
+                            <SelectItem key={hour} value={String(hour)}>
+                              {String(hour).padStart(2, "0")}:00
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => void handleCheckUpdates()} disabled={checkingUpdate}>
+                      <RefreshCw className="mr-2 size-4" />
+                      {checkingUpdate ? "正在检查..." : "立即检查更新"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => void handleOpenReleasePage()}
+                      disabled={!updateStatus.update?.releaseUrl}
+                    >
+                      <ExternalLink className="mr-2 size-4" />
+                      前往下载
+                    </Button>
+                  </div>
+
+                  {updateStatus.state === "available" && updateStatus.update ? (
+                    <div className="rounded-xl border bg-card p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm text-muted-foreground">发现新版本</p>
+                          <h3 className="mt-1 text-xl font-semibold">{updateStatus.update.name}</h3>
+                        </div>
+                        <Badge variant="outline">{updateStatus.update.tagName}</Badge>
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-muted-foreground">{updateStatus.update.summary}</p>
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        发布时间：{formatDateTime(updateStatus.update.publishedAt)}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {updateStatus.state === "not-available" ? (
+                    <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
+                      当前已经是最新稳定版。
+                    </div>
+                  ) : null}
+
+                  {updateStatus.state === "error" ? (
+                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                      {updateStatus.error || "检查更新失败，请稍后重试。"}
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>常规设置</CardTitle>
+                  <CardDescription>主题、布局、同步和其他系统设置会继续放在这里。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm text-muted-foreground">
+                  <p>当前版本先接入软件更新提示，后续再补自动下载和自动安装。</p>
+                </CardContent>
+              </Card>
+            </div>
           ) : section === "language" ? (
             <Card>
               <CardHeader>

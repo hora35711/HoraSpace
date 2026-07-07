@@ -45,6 +45,19 @@ contextBridge.exposeInMainWorld("horaDB", {
   importPluginPackage: () => ipcRenderer.invoke("db:plugins:import"),
   restartApp: () => ipcRenderer.invoke("app:restart"),
 
+  // 软件更新：第一版只检查 GitHub Release、提示新版并跳转下载页。
+  getUpdateSnapshot: () => ipcRenderer.invoke("updates:getSettings"),
+  setUpdateSettings: (input) => ipcRenderer.invoke("updates:setSettings", input),
+  checkForUpdates: () => ipcRenderer.invoke("updates:checkNow"),
+  openReleasePage: (releaseUrl) => ipcRenderer.invoke("updates:openReleasePage", releaseUrl),
+  onUpdateStatusChanged: (callback) => {
+    const listener = (_event, status) => callback(status)
+    ipcRenderer.on("updates:status-changed", listener)
+    return () => {
+      ipcRenderer.removeListener("updates:status-changed", listener)
+    }
+  },
+
   // 空间管理：首次引导、切换、重命名和路径迁移都走这里。
   getSpaceBootstrapState: () => ipcRenderer.invoke("db:spaces:bootstrapState"),
   listSpaces: () => ipcRenderer.invoke("db:spaces:list"),

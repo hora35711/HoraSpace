@@ -123,6 +123,41 @@ type PluginRecord = {
   manifest: PluginManifestRecord
 }
 
+type UpdateSettings = {
+  enabled: boolean
+  schedule: "startup" | "daily"
+  dailyHour: number
+  lastCheckedAt: string | null
+}
+
+type UpdateReleaseInfo = {
+  version: string
+  tagName: string
+  name: string
+  publishedAt: string | null
+  releaseUrl: string
+  summary: string
+  body: string
+  assets: {
+    name: string
+    size: number
+    downloadUrl: string
+  }[]
+}
+
+type UpdateStatus = {
+  state: "idle" | "checking" | "available" | "not-available" | "error"
+  currentVersion: string
+  update: UpdateReleaseInfo | null
+  error: string | null
+  checkedAt: string | null
+}
+
+type UpdateSnapshot = {
+  settings: UpdateSettings
+  status: UpdateStatus
+}
+
 type HoraDBBridge = {
   listProjects: () => Promise<ProjectRecord[]>
   createProject: (input: Partial<ProjectRecord> & { title: string }) => Promise<ProjectRecord | null>
@@ -215,6 +250,11 @@ type HoraDBBridge = {
   getPluginRootPath: () => Promise<string>
   importPluginPackage: () => Promise<{ imported: boolean; reason?: string; targetDir?: string; restartRecommended?: boolean; plugins?: PluginRecord[] }>
   restartApp: () => Promise<boolean>
+  getUpdateSnapshot: () => Promise<UpdateSnapshot>
+  setUpdateSettings: (input: Partial<UpdateSettings>) => Promise<UpdateSettings>
+  checkForUpdates: () => Promise<UpdateStatus>
+  openReleasePage: (releaseUrl?: string) => Promise<boolean>
+  onUpdateStatusChanged: (callback: (status: UpdateStatus) => void) => (() => void) | undefined
   getSpaceBootstrapState: () => Promise<{
     currentSpace: SpaceRecord | null
     spaces: SpaceRecord[]
