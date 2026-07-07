@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DatePickerField } from "@/components/date-picker-field"
+import { TaskDetailDialog } from "@/components/task-detail-dialog"
 import {
   Dialog,
   DialogClose,
@@ -213,6 +214,8 @@ export default function ProjectDetailPage() {
     dueAt: "",
     completedAt: "",
   })
+  // 任务只读详情弹窗，标题点击时打开，不影响原来的编辑流程。
+  const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null)
 
   const refreshAll = async () => {
     if (!projectId) return
@@ -475,6 +478,11 @@ export default function ProjectDetailPage() {
       dueAt: task.dueAt || "",
       completedAt: task.completedAt || "",
     })
+  }
+
+  const openTaskDetail = (task: TaskRecord) => {
+    // 标题点击只负责预览详情，避免和编辑弹窗抢状态。
+    setSelectedTask(task)
   }
 
   const handleUpdateProjectField = async (field: "description" | "status" | "priority" | "startedAt" | "dueAt" | "completedAt", value: string) => {
@@ -903,6 +911,9 @@ export default function ProjectDetailPage() {
                           <span>结束 {project.dueAt || "未设置"}</span>
                         </div>
                       </div>
+                      <p className="mb-3 line-clamp-2 text-xs leading-relaxed text-muted-foreground/80">
+                        {requirement.description || "暂无描述"}
+                      </p>
                       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                         {requirementTasks.length === 0 ? (
                           <div className="rounded-xl border border-dashed border-border bg-background px-3 py-6 text-center text-sm text-muted-foreground dark:bg-muted/20">
@@ -914,8 +925,15 @@ export default function ProjectDetailPage() {
                             <Card key={task.id} className={done ? "border-emerald-200 bg-emerald-50/70 p-3 shadow-none dark:border-emerald-900/60 dark:bg-emerald-950/35" : "border-border/70 bg-background/80 p-3 shadow-none dark:bg-background/60"}>
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0">
-                                  <p className={done ? "truncate text-sm font-medium text-muted-foreground line-through" : "truncate text-sm font-medium"}>
+                                  <button
+                                    type="button"
+                                    onClick={() => openTaskDetail(task)}
+                                    className={done ? "truncate text-left text-sm font-medium text-muted-foreground line-through" : "truncate text-left text-sm font-medium hover:text-foreground"}
+                                  >
                                     {task.title}
+                                  </button>
+                                  <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground/80">
+                                    {task.description || "暂无描述"}
                                   </p>
                                   <div className="mt-1 flex flex-wrap gap-1">
                                     <Badge variant="outline" className={cn("border", getStatusToneClassName(task.status))}>
@@ -950,6 +968,17 @@ export default function ProjectDetailPage() {
           </CardContent>
         </Card>
       ) : null}
+      {/* 只读详情弹窗统一展示任务信息，原有编辑按钮仍然保留。 */}
+      <TaskDetailDialog
+        task={selectedTask}
+        open={Boolean(selectedTask)}
+        onOpenChange={(open) => !open && setSelectedTask(null)}
+        onEdit={(task) => {
+          setSelectedTask(null)
+          openEditTask(task)
+        }}
+        projectTitle={project?.title || null}
+      />
       {layoutMode === "gantt" ? (
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <CardHeader className="px-4 pb-0 pt-4">
@@ -960,7 +989,7 @@ export default function ProjectDetailPage() {
           <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-4">
             {/* 甘特视图也放进固定滚动区，避免长列表把整页撑开。 */}
             <div className="min-h-0 flex-1 overflow-auto">
-              <SimpleGantt project={project} requirements={filteredRequirements} tasks={filteredTasks} />
+              <SimpleGantt project={project} requirements={filteredRequirements} tasks={filteredTasks} onTaskTitleClick={openTaskDetail} />
             </div>
           </CardContent>
         </Card>
@@ -1041,6 +1070,7 @@ export default function ProjectDetailPage() {
                 onDrop={handleTaskDrop}
                 onFlash={handleFlashTask}
                 onEdit={openEditTask}
+                onViewDetail={openTaskDetail}
                 onToggle={async (task, done) => {
                   await updateTaskStatus({ id: task.id, done })
                   await refreshAll()
@@ -1439,6 +1469,9 @@ function RequirementList(props: {
                 <p title={row.title} className={done ? "truncate font-medium text-muted-foreground line-through" : "truncate font-medium"}>
                   {row.title}
                 </p>
+                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground/80">
+                  {row.description || "暂无描述"}
+                </p>
                 <div className="mt-1 flex flex-wrap gap-1">
                   <Badge variant="outline" className={cn("border", getStatusToneClassName(row.status))}>
                     {done ? "已完成" : REQUIREMENT_STATUS_TEXT[row.status]}
@@ -1504,6 +1537,7 @@ function TaskList(props: {
   onDrop: (id: string) => Promise<void>
   onFlash: (row: TaskRecord) => void
   onEdit: (row: TaskRecord) => void
+  onViewDetail: (row: TaskRecord) => void
   onToggle: (row: TaskRecord, done: boolean) => Promise<void>
   onDelete: (id: string) => Promise<void>
   dialogForm: {
@@ -1559,8 +1593,15 @@ function TaskList(props: {
                 style={{ backgroundColor: row.color || "#8AA8E8" }}
               />
               <div className="min-w-0 flex-1">
-                <p title={row.title} className={done ? "truncate font-medium text-muted-foreground line-through" : "truncate font-medium"}>
+                <button
+                  type="button"
+                  onClick={() => props.onViewDetail(row)}
+                  className={done ? "truncate text-left font-medium text-muted-foreground line-through" : "truncate text-left font-medium hover:text-foreground"}
+                >
                   {row.title}
+                </button>
+                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground/80">
+                  {row.description || "暂无描述"}
                 </p>
                 <div className="mt-1 flex flex-wrap gap-1">
                   <Badge variant="outline" className={cn("border", getStatusToneClassName(row.status))}>
@@ -1772,11 +1813,13 @@ function SimpleGantt(props: {
   project: ProjectRecord
   requirements: RequirementRecord[]
   tasks: TaskRecord[]
+  onTaskTitleClick?: (task: TaskRecord) => void
 }) {
   // 轻量甘特图：优先用项目和任务里的实际日期，缺失时回退到项目周期。
   const rows = props.requirements.map((requirement) => ({
     id: requirement.id,
     title: requirement.title,
+    description: requirement.description,
     color: requirement.color || "#8AA8E8",
     items: props.tasks.filter((task) => task.requirementId === requirement.id),
   }))
@@ -1816,13 +1859,14 @@ function SimpleGantt(props: {
                 <div className="mb-2 flex items-center justify-between px-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold">{row.title}</p>
+                    <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground/80">{row.description || "暂无描述"}</p>
                     <p className="text-xs text-muted-foreground">{row.items.length} 个任务</p>
                   </div>
                   <span className="size-3 rounded-full" style={{ backgroundColor: row.color }} />
                 </div>
                 <div className="space-y-2">
                   {rowEntries.map((task) => {
-                    const ganttTask = task as Pick<TaskRecord, "id" | "title" | "startedAt" | "dueAt" | "completedAt" | "status" | "priority" | "isCompleted">
+                    const ganttTask = task as Pick<TaskRecord, "id" | "title" | "description" | "startedAt" | "dueAt" | "completedAt" | "status" | "priority" | "isCompleted">
                     const start = parseDate(ganttTask.startedAt || props.project.startedAt || startDate.toISOString())
                     const end = parseDate(ganttTask.dueAt || ganttTask.completedAt || ganttTask.startedAt || props.project.dueAt || props.project.completedAt || endDate.toISOString())
                     const safeStart = start < startDate ? startDate : start
@@ -1835,7 +1879,16 @@ function SimpleGantt(props: {
                       <div key={ganttTask.id} className="rounded-lg border border-border/70 bg-background/80 p-3 shadow-none dark:bg-background/60">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className={done ? "truncate text-sm font-medium text-muted-foreground line-through" : "truncate text-sm font-medium"}>{ganttTask.title}</p>
+                            <button
+                              type="button"
+                              onClick={() => props.onTaskTitleClick?.(ganttTask as TaskRecord)}
+                              className={done ? "truncate text-left text-sm font-medium text-muted-foreground line-through" : "truncate text-left text-sm font-medium hover:text-foreground"}
+                            >
+                              {ganttTask.title}
+                            </button>
+                            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground/80">
+                              {(ganttTask.description || "暂无描述")}
+                            </p>
                             <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
                               <Badge variant="outline" className={cn("border", getStatusToneClassName(ganttTask.status))}>
                                 {done ? "已完成" : TASK_STATUS_TEXT[ganttTask.status]}

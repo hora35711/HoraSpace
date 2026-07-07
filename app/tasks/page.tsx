@@ -2,13 +2,29 @@
 
 // 全局 Tasks 页面：跨项目展示同一张 tasks 表中的执行项。
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { Check, CheckCircle2, ChevronDown, Circle, Filter, Pencil, RotateCcw, X } from "lucide-react"
+import {
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  Circle,
+  Filter,
+  Pencil,
+  RotateCcw,
+  X,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
 import { DatePickerField } from "@/components/date-picker-field"
 import {
   DropdownMenu,
@@ -36,6 +52,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { TaskDetailDialog } from "@/components/task-detail-dialog"
 import { cn } from "@/lib/utils"
 import { saveProjectsDetailHref } from "@/lib/projects-navigation-state"
 import {
@@ -66,12 +83,16 @@ const TASK_FILTER_STORAGE_KEY = "hora_tasks_filters"
 const EMPTY_FILTERS: TaskFilters = {}
 const ALL_FILTER_VALUE = "__all__"
 
+const TASK_TABLE_GRID =
+  "grid-cols-[minmax(0,2fr)_4.75rem_4.75rem_minmax(0,1fr)_minmax(0,1fr)_6.5rem_5.5rem_3rem]"
+
 export default function TasksPage() {
   const [projects, setProjects] = useState<ProjectRecord[]>([])
   const [requirements, setRequirements] = useState<RequirementRecord[]>([])
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [filters, setFilters] = useState<TaskFilters>(EMPTY_FILTERS)
   const [editingTask, setEditingTask] = useState<TaskRecord | null>(null)
+  const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null)
   const [taskForm, setTaskForm] = useState({
     title: "",
     description: "",
@@ -83,10 +104,13 @@ export default function TasksPage() {
   })
   const [error, setError] = useState<string | null>(null)
 
-  const refreshTasks = async (nextFilters = filters) => {
-    const rows = await listAllTasks(nextFilters)
-    setTasks(sortTasksForDisplay(rows))
-  }
+  const refreshTasks = useCallback(
+    async (nextFilters = filters) => {
+      const rows = await listAllTasks(nextFilters)
+      setTasks(sortTasksForDisplay(rows))
+    },
+    [filters]
+  )
 
   useEffect(() => {
     const run = async () => {
@@ -94,10 +118,17 @@ export default function TasksPage() {
         setError(null)
         const savedFilters = loadSavedTaskFilters()
         setFilters(savedFilters)
+
         const projectRows = await listProjects()
         setProjects(projectRows)
-        const requirementRows = (await Promise.all(projectRows.map((project) => listRequirementsByProject(project.id)))).flat()
+
+        const requirementRows = (
+          await Promise.all(
+            projectRows.map((project) => listRequirementsByProject(project.id))
+          )
+        ).flat()
         setRequirements(requirementRows)
+
         await refreshTasks(savedFilters)
       } catch (err) {
         setError(err instanceof Error ? err.message : "加载任务失败")
@@ -105,10 +136,9 @@ export default function TasksPage() {
     }
 
     void run()
-  }, [])
+  }, [refreshTasks])
 
   useEffect(() => {
-    // 监听其它页面写入数据后的广播，保证 project / tasks 两边看到同一份最新状态。
     const refreshFromBroadcast = () => {
       void refreshTasks()
     }
@@ -122,13 +152,18 @@ export default function TasksPage() {
 
   const visibleRequirements = useMemo(() => {
     if (!filters.projectId) return requirements
-    return requirements.filter((requirement) => requirement.projectId === filters.projectId)
+    return requirements.filter(
+      (requirement) => requirement.projectId === filters.projectId
+    )
   }, [filters.projectId, requirements])
 
   const updateFilters = async (nextFilters: TaskFilters) => {
     const normalizedFilters = normalizeTaskFilters(nextFilters)
     setFilters(normalizedFilters)
-    window.localStorage.setItem(TASK_FILTER_STORAGE_KEY, JSON.stringify(normalizedFilters))
+    window.localStorage.setItem(
+      TASK_FILTER_STORAGE_KEY,
+      JSON.stringify(normalizedFilters)
+    )
     await refreshTasks(normalizedFilters)
   }
 
@@ -162,6 +197,7 @@ export default function TasksPage() {
     const nextStatuses = currentStatuses.includes(status)
       ? currentStatuses.filter((item) => item !== status)
       : [...currentStatuses, status]
+
     await updateFilters({ ...filters, status: "", statuses: nextStatuses })
   }
 
@@ -178,8 +214,13 @@ export default function TasksPage() {
     })
   }
 
+  const openTaskDetail = (task: TaskRecord) => {
+    setSelectedTask(task)
+  }
+
   const handleSaveTask = async () => {
     if (!editingTask) return
+
     const title = taskForm.title.trim()
     if (!title) return
 
@@ -206,10 +247,12 @@ export default function TasksPage() {
     <main className="flex h-[calc(100vh-4rem)] w-full flex-col overflow-hidden pt-1">
       <header className="shrink-0">
         <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-        <p className="mt-1 text-xs text-muted-foreground">跨项目执行视图，数据来自同一张 tasks 表。</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          跨项目执行视图，数据来自同一张 tasks 表。
+        </p>
       </header>
 
-      {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-rose-600">{error}</p> : null}
 
       <section className="mt-3 shrink-0 rounded-xl border bg-card p-3 shadow-sm">
         <div className="mb-3 flex items-center justify-between gap-2 text-xs font-medium">
@@ -217,11 +260,17 @@ export default function TasksPage() {
             <Filter className="size-3.5" />
             筛选
           </div>
-          <Button type="button" size="xs" variant="outline" onClick={() => void clearFilters()}>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            onClick={() => void clearFilters()}
+          >
             <RotateCcw className="size-3.5" />
             清除选项
           </Button>
         </div>
+
         <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
           <Select
             value={filters.projectId || ALL_FILTER_VALUE}
@@ -245,6 +294,7 @@ export default function TasksPage() {
               ))}
             </SelectContent>
           </Select>
+
           <Select
             value={filters.requirementId || ALL_FILTER_VALUE}
             onValueChange={(value) =>
@@ -266,9 +316,14 @@ export default function TasksPage() {
               ))}
             </SelectContent>
           </Select>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" className="h-8 justify-between px-2 text-xs">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-8 justify-between px-2 text-xs"
+              >
                 {formatStatusFilter(filters.statuses)}
                 <ChevronDown className="size-3.5" />
               </Button>
@@ -277,26 +332,32 @@ export default function TasksPage() {
               {Object.entries(TASK_STATUS_TEXT).map(([value, label]) => (
                 <DropdownMenuCheckboxItem
                   key={value}
-                  checked={(filters.statuses || []).includes(value as TaskStatus)}
-                  onCheckedChange={() => void toggleStatusFilter(value as TaskStatus)}
+                  checked={(filters.statuses || []).includes(
+                    value as TaskStatus
+                  )}
+                  onCheckedChange={() =>
+                    void toggleStatusFilter(value as TaskStatus)
+                  }
                 >
                   {label}
                 </DropdownMenuCheckboxItem>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
           <Select
             value={filters.priority || ALL_FILTER_VALUE}
             onValueChange={(value) =>
               void updateFilters({
                 ...filters,
-                priority: value === ALL_FILTER_VALUE ? undefined : (value as Priority),
+                priority:
+                  value === ALL_FILTER_VALUE ? undefined : (value as Priority),
               })
             }
           >
-              <SelectTrigger size="sm" className="w-full text-xs">
-                <SelectValue placeholder="全部优先级" />
-              </SelectTrigger>
+            <SelectTrigger size="sm" className="w-full text-xs">
+              <SelectValue placeholder="全部优先级" />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL_FILTER_VALUE}>全部优先级</SelectItem>
               {Object.entries(PRIORITY_TEXT).map(([value, label]) => (
@@ -310,36 +371,92 @@ export default function TasksPage() {
       </section>
 
       <section className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border bg-card shadow-sm">
-        <div className="sticky top-0 z-10 grid grid-cols-[1.5fr_0.8fr_0.8fr_1fr_1fr_0.8fr_1fr_0.5fr] border-b bg-muted/50 px-4 py-2 text-xs font-medium text-muted-foreground dark:bg-muted/20">
-          <span>任务</span>
-          <span>状态</span>
-          <span>优先级</span>
-          <span>项目</span>
-          <span>需求</span>
-          <span>截止</span>
-          <span>更新时间</span>
+        <div
+          className={cn(
+            "sticky top-0 z-10 grid items-center gap-2 border-b bg-muted/50 px-4 py-2 text-xs font-medium text-muted-foreground dark:bg-muted/20",
+
+            TASK_TABLE_GRID
+          )}
+        >
+          <span className="text-left">任务</span>
+
+          <span className="text-center">状态</span>
+
+          <span className="text-center">优先级</span>
+
+          <span className="text-center">项目</span>
+
+          <span className="text-center">需求</span>
+
+          <span className="text-center">周期</span>
+
+          <span className="text-center">更新</span>
+
           <span className="text-right">编辑</span>
         </div>
 
         {tasks.map((task) => {
           const done = task.isCompleted === 1 || task.status === "done"
+
+          // @ts-ignore
+          // @ts-ignore
+          // @ts-ignore
           return (
-            <article key={task.id} className="grid grid-cols-[1.5fr_0.8fr_0.8fr_1fr_1fr_0.8fr_1fr_0.5fr] items-center border-b px-4 py-3 text-sm last:border-b-0">
+            <article
+              key={task.id}
+              className={cn(
+                "grid items-center gap-2 border-b px-4 py-3 text-sm transition-colors last:border-b-0 hover:bg-muted/30",
+
+                TASK_TABLE_GRID
+              )}
+            >
               <div className="flex min-w-0 items-center gap-3">
-                <TaskStateToggle task={task} onToggle={handleToggleDone} onStatusChange={handleChangeStatus} />
+                <TaskStateToggle
+                  task={task}
+                  onToggle={handleToggleDone}
+                  onStatusChange={handleChangeStatus}
+                />
                 <span
-                  className="size-3 rounded-full border border-border dark:border-border/70"
+                  className="size-3 shrink-0 rounded-full border border-border dark:border-border/70"
                   style={{ backgroundColor: task.color || "#8AA8E8" }}
                 />
-                <span className={done ? "truncate font-medium text-muted-foreground line-through" : "truncate font-medium"}>{task.title}</span>
+                <div className="min-w-0 flex-1 space-y-1 text-left">
+                  <button
+                    type="button"
+                    onClick={() => openTaskDetail(task)}
+                    className={cn(
+                      "line-clamp-2 w-full text-left leading-5 font-medium hover:text-foreground",
+                      done && "text-muted-foreground line-through"
+                    )}
+                  >
+                    {task.title}
+                  </button>
+                  <p
+                    title={task.description || "暂无描述"}
+                    className="truncate text-xs leading-relaxed text-muted-foreground/80"
+                  >
+                    {task.description || "暂无描述"}
+                  </p>
+                </div>
               </div>
+
               <Select
                 value={task.status}
-                onValueChange={(value) => void handleChangeStatus(task, value as TaskStatus)}
+                onValueChange={(value) =>
+                  void handleChangeStatus(task, value as TaskStatus)
+                }
               >
-              <SelectTrigger size="sm" className={cn("w-28 text-xs", getStatusToneClassName(task.status))}>
-                <SelectValue />
-              </SelectTrigger>
+                <SelectTrigger
+                  size="sm"
+                  className={cn(
+                    "h-6 w-full justify-center rounded-full px-2 text-xs",
+
+                    getStatusToneClassName(task.status)
+                  )}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+
                 <SelectContent>
                   {Object.entries(TASK_STATUS_TEXT).map(([value, label]) => (
                     <SelectItem key={value} value={value}>
@@ -348,28 +465,54 @@ export default function TasksPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Badge variant="outline" className={getPriorityToneClassName(task.priority)}>
+
+              <Badge
+                variant="outline"
+                className={cn(
+                  "h-6 justify-center rounded-full px-2 text-xs",
+                  getPriorityToneClassName(task.priority)
+                )}
+              >
                 {PRIORITY_TEXT[task.priority]}
               </Badge>
+
               <Link
                 href={`/projects/${task.projectId}`}
-                className="truncate hover:underline"
-                onClick={() => saveProjectsDetailHref(`/projects/${task.projectId}`)}
+                title={task.projectTitle || ''}
+                className="truncate text-center leading-5 hover:underline"
+                onClick={() =>
+                  saveProjectsDetailHref(`/projects/${task.projectId}`)
+                }
               >
                 {task.projectTitle}
               </Link>
-              <span className="truncate text-muted-foreground">{task.requirementTitle || "无需求"}</span>
-              {/* 三行日期把任务周期压缩成一个更容易扫视的摘要。 */}
-              <span className="text-xs text-muted-foreground">
-                <span className="block">{task.startedAt || "未开始"}</span>
-                <span className="block">{task.dueAt || "未计划"}</span>
-                <span className="block">{task.completedAt || "未完成"}</span>
+
+              <span
+                title={task.requirementTitle || "无需求"}
+                className="truncate text-center leading-5 text-muted-foreground"
+              >
+                {task.requirementTitle || "无需求"}
               </span>
-              <span className="text-xs text-muted-foreground">{task.updatedAt?.slice(0, 10)}</span>
+
+              <span className="text-center text-[11px] leading-4 text-muted-foreground">
+                <span className="block">起 {task.startedAt || "未定"}</span>
+                <span className="block">止 {task.dueAt || "未定"}</span>
+                <span className="block">完 {task.completedAt || "未完"}</span>
+              </span>
+
+              <span className="text-center text-xs text-muted-foreground">
+                {task.updatedAt?.slice(0, 10)}
+              </span>
+
               <div className="flex justify-end">
                 <Dialog>
                   <DialogTrigger asChild>
-                    <Button type="button" size="icon-sm" variant="outline" onClick={() => openEditTask(task)}>
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="outline"
+                      onClick={() => openEditTask(task)}
+                    >
                       <Pencil className="size-3.5" />
                     </Button>
                   </DialogTrigger>
@@ -389,18 +532,38 @@ export default function TasksPage() {
         <Empty className="mt-4 rounded-xl border border-dashed bg-card py-10 dark:bg-muted/10">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              {(filters.statuses || []).includes("done") ? <CheckCircle2 className="size-4" /> : <Circle className="size-4" />}
+              {(filters.statuses || []).includes("done") ? (
+                <CheckCircle2 className="size-4" />
+              ) : (
+                <Circle className="size-4" />
+              )}
             </EmptyMedia>
             <EmptyTitle>暂无任务</EmptyTitle>
-            <EmptyDescription>可以先创建任务，或者切换筛选条件看看其他状态。</EmptyDescription>
+            <EmptyDescription>
+              可以先创建任务，或者切换筛选条件看看其他状态。
+            </EmptyDescription>
           </EmptyHeader>
           <EmptyContent className="flex-row justify-center">
-            <Button type="button" variant="outline" onClick={() => void clearFilters()}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void clearFilters()}
+            >
               清除筛选
             </Button>
           </EmptyContent>
         </Empty>
       ) : null}
+
+      <TaskDetailDialog
+        task={selectedTask}
+        open={Boolean(selectedTask)}
+        onOpenChange={(open) => !open && setSelectedTask(null)}
+        onEdit={(task) => {
+          setSelectedTask(null)
+          openEditTask(task)
+        }}
+      />
     </main>
   )
 }
@@ -430,31 +593,48 @@ function TaskEditDialog(props: {
     <DialogContent className="sm:max-w-md">
       <DialogHeader>
         <DialogTitle>编辑任务</DialogTitle>
-        <DialogDescription>修改任务标题、描述、状态和优先级。</DialogDescription>
+        <DialogDescription>
+          修改任务标题、描述、状态和优先级。
+        </DialogDescription>
       </DialogHeader>
+
       <div className="space-y-4 py-2">
         <div className="space-y-2">
           <Label htmlFor="task-title">标题</Label>
           <Input
             id="task-title"
             value={props.form.title}
-            onChange={(event) => props.onFormChange({ ...props.form, title: event.target.value })}
+            onChange={(event) =>
+              props.onFormChange({ ...props.form, title: event.target.value })
+            }
           />
         </div>
+
         <div className="space-y-2">
           <Label htmlFor="task-description">描述</Label>
           <Textarea
             id="task-description"
             value={props.form.description}
-            onChange={(event) => props.onFormChange({ ...props.form, description: event.target.value })}
+            onChange={(event) =>
+              props.onFormChange({
+                ...props.form,
+                description: event.target.value,
+              })
+            }
           />
         </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
             <Label>状态</Label>
             <Select
               value={props.form.status}
-              onValueChange={(value) => props.onFormChange({ ...props.form, status: value as TaskStatus })}
+              onValueChange={(value) =>
+                props.onFormChange({
+                  ...props.form,
+                  status: value as TaskStatus,
+                })
+              }
             >
               <SelectTrigger>
                 <SelectValue />
@@ -468,11 +648,17 @@ function TaskEditDialog(props: {
               </SelectContent>
             </Select>
           </div>
+
           <div className="space-y-2">
             <Label>优先级</Label>
             <Select
               value={props.form.priority}
-              onValueChange={(value) => props.onFormChange({ ...props.form, priority: value as Priority })}
+              onValueChange={(value) =>
+                props.onFormChange({
+                  ...props.form,
+                  priority: value as Priority,
+                })
+              }
             >
               <SelectTrigger>
                 <SelectValue />
@@ -487,33 +673,45 @@ function TaskEditDialog(props: {
             </Select>
           </div>
         </div>
+
         <div className="grid gap-3 md:grid-cols-3">
           <DatePickerField
             id="task-started-at"
             label="开始日期"
             value={props.form.startedAt}
-            onChange={(value) => props.onFormChange({ ...props.form, startedAt: value })}
+            onChange={(value) =>
+              props.onFormChange({ ...props.form, startedAt: value })
+            }
           />
           <DatePickerField
             id="task-due-at"
             label="计划结束"
             value={props.form.dueAt}
-            onChange={(value) => props.onFormChange({ ...props.form, dueAt: value })}
+            onChange={(value) =>
+              props.onFormChange({ ...props.form, dueAt: value })
+            }
           />
           <DatePickerField
             id="task-completed-at"
             label="最终结束"
             value={props.form.completedAt}
-            onChange={(value) => props.onFormChange({ ...props.form, completedAt: value })}
+            onChange={(value) =>
+              props.onFormChange({ ...props.form, completedAt: value })
+            }
           />
         </div>
       </div>
+
       <DialogFooter>
         <DialogClose asChild>
-          <Button type="button" variant="outline">取消</Button>
+          <Button type="button" variant="outline">
+            取消
+          </Button>
         </DialogClose>
         <DialogClose asChild>
-          <Button type="button" onClick={() => void props.onSave()}>保存</Button>
+          <Button type="button" onClick={() => void props.onSave()}>
+            保存
+          </Button>
         </DialogClose>
       </DialogFooter>
     </DialogContent>
@@ -534,7 +732,7 @@ function TaskStateToggle(props: {
         type="button"
         aria-label="恢复任务"
         onClick={() => void props.onStatusChange(props.task, "todo")}
-        className="flex size-4 items-center justify-center rounded-[4px] border border-border bg-muted text-muted-foreground dark:bg-muted/70"
+        className="flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-border bg-muted text-muted-foreground dark:bg-muted/70"
       >
         <X className="size-3" />
       </button>
@@ -546,9 +744,10 @@ function TaskStateToggle(props: {
       type="button"
       aria-label={done ? "取消完成" : "完成任务"}
       onClick={() => void props.onToggle(props.task, !done)}
-      className={done
-        ? "flex size-4 items-center justify-center rounded-[4px] border border-sky-300 bg-sky-100 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-300"
-        : "size-4 rounded-[4px] border border-input bg-background dark:bg-background/60"
+      className={
+        done
+          ? "flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-sky-300 bg-sky-100 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-300"
+          : "size-4 shrink-0 rounded-[4px] border border-input bg-background dark:bg-background/60"
       }
     >
       {done ? <Check className="size-3" /> : null}
@@ -558,6 +757,7 @@ function TaskStateToggle(props: {
 
 function loadSavedTaskFilters(): TaskFilters {
   if (typeof window === "undefined") return EMPTY_FILTERS
+
   const raw = window.localStorage.getItem(TASK_FILTER_STORAGE_KEY)
   if (!raw) return EMPTY_FILTERS
 

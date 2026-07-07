@@ -150,6 +150,7 @@ type DrilldownItem = {
   type: "project" | "requirement" | "task"
   id: string
   title: string
+  description?: string | null
   projectId: string
   projectTitle: string
   requirementId?: string | null
@@ -639,6 +640,7 @@ export default function DashboardPage() {
           type: "requirement" as const,
           id: item.id,
           title: item.title,
+          description: item.description,
           projectId: item.projectId,
           projectTitle: projects.find((project) => project.id === item.projectId)?.title || "未命名项目",
           requirementId: item.id,
@@ -656,6 +658,7 @@ export default function DashboardPage() {
           type: "task" as const,
           id: item.id,
           title: item.title,
+          description: item.description,
           projectId: item.projectId,
           projectTitle: projects.find((project) => project.id === item.projectId)?.title || "未命名项目",
           requirementId: item.requirementId,
@@ -681,6 +684,7 @@ export default function DashboardPage() {
         type: "requirement" as const,
         id: item.id,
         title: item.title,
+        description: item.description,
         projectId: item.projectId,
         projectTitle: projects.find((project) => project.id === item.projectId)?.title || "未命名项目",
         requirementId: item.id,
@@ -698,6 +702,7 @@ export default function DashboardPage() {
         type: "task" as const,
         id: item.id,
         title: item.title,
+        description: item.description,
         projectId: item.projectId,
         projectTitle: projects.find((project) => project.id === item.projectId)?.title || "未命名项目",
         requirementId: item.requirementId,
@@ -1357,6 +1362,9 @@ export default function DashboardPage() {
                         <div className="min-w-0 flex-1 space-y-2">
                           <div className="space-y-1">
                             <p className="truncate font-medium">{item.title}</p>
+                            <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground/80">
+                              {item.description || "暂无描述"}
+                            </p>
                             <p className="truncate text-xs text-muted-foreground">{item.projectTitle}</p>
                           </div>
                           <div className="flex flex-wrap gap-1">
@@ -1419,6 +1427,9 @@ export default function DashboardPage() {
                         <div className="min-w-0 flex-1 space-y-2">
                           <div className="space-y-1">
                             <p className="truncate font-medium">{item.title}</p>
+                            <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground/80">
+                              {item.description || "暂无描述"}
+                            </p>
                             <p className="truncate text-xs text-muted-foreground">
                               {item.projectTitle}
                               {item.requirementTitle ? ` · ${item.requirementTitle}` : ""}
