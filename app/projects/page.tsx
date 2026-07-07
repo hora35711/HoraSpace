@@ -68,6 +68,28 @@ const PROJECTS_LIST_HREF = "/projects?list=1"
 
 type ProjectsViewMode = "list" | "cards" | "gantt"
 
+// 新建项目时默认带上今天和五天后的日期，减少每次手动补日期的成本。
+function createDefaultProjectDates() {
+  const startedAt = formatLocalDate(new Date())
+  const dueAt = formatLocalDate(addDaysLocal(new Date(), 5))
+  return { startedAt, dueAt }
+}
+
+// 日期统一走本地日历日，避免浏览器 UTC 转换导致“今天变昨天”。
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, "0")
+  const day = `${date.getDate()}`.padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+// 简单加天数，给默认周期用。
+function addDaysLocal(date: Date, days: number) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
 export default function ProjectsPage() {
   const router = useRouter()
   const [projects, setProjects] = useState<ProjectRecord[]>([])
@@ -140,6 +162,7 @@ export default function ProjectsPage() {
   const sortedProjects = useMemo(() => projects, [projects])
 
   const openCreateDialog = () => {
+    const { startedAt, dueAt } = createDefaultProjectDates()
     setEditingProject(null)
     setForm({
       title: "",
@@ -147,8 +170,8 @@ export default function ProjectsPage() {
       status: "active",
       priority: "normal",
       color: COLOR_OPTIONS[0],
-      startedAt: "",
-      dueAt: "",
+      startedAt,
+      dueAt,
       completedAt: "",
     })
   }

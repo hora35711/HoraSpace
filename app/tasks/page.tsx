@@ -11,6 +11,7 @@ import {
   Circle,
   Filter,
   Pencil,
+  Plus,
   RotateCcw,
   X,
 } from "lucide-react"
@@ -40,7 +41,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -63,6 +63,7 @@ import {
   compareByStatusThenPriority,
 } from "@/lib/project-style"
 import {
+  createTask,
   listAllTasks,
   listProjects,
   listRequirementsByProject,
@@ -86,22 +87,32 @@ const ALL_FILTER_VALUE = "__all__"
 const TASK_TABLE_GRID =
   "grid-cols-[minmax(0,2fr)_4.75rem_4.75rem_minmax(0,1fr)_minmax(0,1fr)_6.5rem_5.5rem_3rem]"
 
+// 新建任务默认给一个今天到五天后的周期，减少用户每次手填日期的成本。
+function createDefaultTaskForm(projectId = "", requirementId = "") {
+  const startedAt = formatLocalDate(new Date())
+  const dueAt = formatLocalDate(addDaysLocal(new Date(), 5))
+  return {
+    title: "",
+    description: "",
+    projectId,
+    requirementId,
+    status: "todo" as TaskStatus,
+    priority: "normal" as Priority,
+    startedAt,
+    dueAt,
+    completedAt: "",
+  }
+}
+
 export default function TasksPage() {
   const [projects, setProjects] = useState<ProjectRecord[]>([])
   const [requirements, setRequirements] = useState<RequirementRecord[]>([])
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [filters, setFilters] = useState<TaskFilters>(EMPTY_FILTERS)
+  const [taskDialogMode, setTaskDialogMode] = useState<"create" | "edit" | null>(null)
   const [editingTask, setEditingTask] = useState<TaskRecord | null>(null)
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null)
-  const [taskForm, setTaskForm] = useState({
-    title: "",
-    description: "",
-    status: "todo" as TaskStatus,
-    priority: "normal" as Priority,
-    startedAt: "",
-    dueAt: "",
-    completedAt: "",
-  })
+  const [taskForm, setTaskForm] = useState(() => createDefaultTaskForm())
   const [error, setError] = useState<string | null>(null)
 
   const refreshTasks = useCallback(
@@ -157,6 +168,11 @@ export default function TasksPage() {
     )
   }, [filters.projectId, requirements])
 
+  const taskFormRequirements = useMemo(() => {
+    if (!taskForm.projectId) return requirements
+    return requirements.filter((requirement) => requirement.projectId === taskForm.projectId)
+  }, [requirements, taskForm.projectId])
+
   const updateFilters = async (nextFilters: TaskFilters) => {
     const normalizedFilters = normalizeTaskFilters(nextFilters)
     setFilters(normalizedFilters)
@@ -201,15 +217,29 @@ export default function TasksPage() {
     await updateFilters({ ...filters, status: "", statuses: nextStatuses })
   }
 
+  const openCreateTask = () => {
+    setError(null)
+    const defaultProjectId = filters.projectId || projects[0]?.id || ""
+    const defaultRequirementId =
+      requirements.find((requirement) => requirement.projectId === defaultProjectId)?.id || ""
+    setEditingTask(null)
+    setTaskDialogMode("create")
+    setTaskForm(createDefaultTaskForm(defaultProjectId, defaultRequirementId))
+  }
+
   const openEditTask = (task: TaskRecord) => {
+    setError(null)
     setEditingTask(task)
+    setTaskDialogMode("edit")
     setTaskForm({
       title: task.title,
       description: task.description || "",
+      projectId: task.projectId,
+      requirementId: task.requirementId || "",
       status: task.status,
       priority: task.priority,
-      startedAt: task.startedAt || "",
-      dueAt: task.dueAt || "",
+      startedAt: task.startedAt || formatLocalDate(new Date()),
+      dueAt: task.dueAt || formatLocalDate(addDaysLocal(new Date(), 5)),
       completedAt: task.completedAt || "",
     })
   }
@@ -219,25 +249,43 @@ export default function TasksPage() {
   }
 
   const handleSaveTask = async () => {
-    if (!editingTask) return
-
     const title = taskForm.title.trim()
-    if (!title) return
+    const projectId = taskForm.projectId.trim()
+    if (!title || !projectId) return
 
     try {
       setError(null)
-      await updateTask({
-        id: editingTask.id,
-        title,
-        description: taskForm.description.trim() || null,
-        status: taskForm.status,
-        priority: taskForm.priority,
-        startedAt: taskForm.startedAt || null,
-        dueAt: taskForm.dueAt || null,
-        completedAt: taskForm.completedAt || null,
-        isCompleted: taskForm.status === "done",
-      })
+      if (taskDialogMode === "create") {
+        // 新建任务时顺手带上项目和需求，减少用户补填次数。
+        await createTask({
+          projectId,
+          requirementId: taskForm.requirementId || null,
+          title,
+          description: taskForm.description.trim() || undefined,
+          status: taskForm.status,
+          priority: taskForm.priority,
+          startedAt: taskForm.startedAt || null,
+          dueAt: taskForm.dueAt || null,
+          isCompleted: taskForm.status === "done",
+        })
+      } else if (editingTask) {
+        await updateTask({
+          id: editingTask.id,
+          projectId,
+          requirementId: taskForm.requirementId || null,
+          title,
+          description: taskForm.description.trim() || null,
+          status: taskForm.status,
+          priority: taskForm.priority,
+          startedAt: taskForm.startedAt || null,
+          dueAt: taskForm.dueAt || null,
+          completedAt: taskForm.completedAt || null,
+          isCompleted: taskForm.status === "done",
+        })
+      }
       await refreshTasks()
+      setTaskDialogMode(null)
+      setEditingTask(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存任务失败")
     }
@@ -245,11 +293,17 @@ export default function TasksPage() {
 
   return (
     <main className="flex h-[calc(100vh-4rem)] w-full flex-col overflow-hidden pt-1">
-      <header className="shrink-0">
-        <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          跨项目执行视图，数据来自同一张 tasks 表。
-        </p>
+      <header className="flex shrink-0 items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
+          <p className="mt-1 text-xs text-muted-foreground">
+            跨项目执行视图，数据来自同一张 tasks 表。
+          </p>
+        </div>
+        <Button type="button" onClick={openCreateTask}>
+          <Plus className="size-4" />
+          新建任务
+        </Button>
       </header>
 
       {error ? <p className="mt-2 text-sm text-rose-600">{error}</p> : null}
@@ -505,23 +559,14 @@ export default function TasksPage() {
               </span>
 
               <div className="flex justify-end">
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="outline"
-                      onClick={() => openEditTask(task)}
-                    >
-                      <Pencil className="size-3.5" />
-                    </Button>
-                  </DialogTrigger>
-                  <TaskEditDialog
-                    form={taskForm}
-                    onFormChange={setTaskForm}
-                    onSave={handleSaveTask}
-                  />
-                </Dialog>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="outline"
+                  onClick={() => openEditTask(task)}
+                >
+                  <Pencil className="size-3.5" />
+                </Button>
               </div>
             </article>
           )
@@ -555,6 +600,26 @@ export default function TasksPage() {
         </Empty>
       ) : null}
 
+      {/* 新建和编辑共用同一套表单，避免两套逻辑分叉。 */}
+      <Dialog
+        open={taskDialogMode !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTaskDialogMode(null)
+            setEditingTask(null)
+          }
+        }}
+      >
+        <TaskEditDialog
+          mode={taskDialogMode || "create"}
+          form={taskForm}
+          projects={projects}
+          requirements={taskFormRequirements}
+          onFormChange={setTaskForm}
+          onSave={handleSaveTask}
+        />
+      </Dialog>
+
       <TaskDetailDialog
         task={selectedTask}
         open={Boolean(selectedTask)}
@@ -569,18 +634,25 @@ export default function TasksPage() {
 }
 
 function TaskEditDialog(props: {
+  mode: "create" | "edit"
   form: {
     title: string
     description: string
+    projectId: string
+    requirementId: string
     status: TaskStatus
     priority: Priority
     startedAt: string
     dueAt: string
     completedAt: string
   }
+  projects: ProjectRecord[]
+  requirements: RequirementRecord[]
   onFormChange: (form: {
     title: string
     description: string
+    projectId: string
+    requirementId: string
     status: TaskStatus
     priority: Priority
     startedAt: string
@@ -589,12 +661,20 @@ function TaskEditDialog(props: {
   }) => void
   onSave: () => Promise<void>
 }) {
+  const selectedRequirements = props.form.projectId
+    ? props.requirements.filter(
+        (requirement) => requirement.projectId === props.form.projectId
+      )
+    : props.requirements
+
   return (
     <DialogContent className="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>编辑任务</DialogTitle>
+        <DialogTitle>{props.mode === "create" ? "新建任务" : "编辑任务"}</DialogTitle>
         <DialogDescription>
-          修改任务标题、描述、状态和优先级。
+          {props.mode === "create"
+            ? "填写任务标题、项目、需求和日期后即可创建。"
+            : "修改任务标题、描述、状态、优先级和归属信息。"}
         </DialogDescription>
       </DialogHeader>
 
@@ -608,6 +688,65 @@ function TaskEditDialog(props: {
               props.onFormChange({ ...props.form, title: event.target.value })
             }
           />
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label>项目</Label>
+            <Select
+              value={props.form.projectId}
+              onValueChange={(value) =>
+                props.onFormChange({
+                  ...props.form,
+                  projectId: value,
+                  requirementId:
+                    props.requirements.some(
+                      (requirement) =>
+                        requirement.id === props.form.requirementId &&
+                        requirement.projectId === value
+                    )
+                      ? props.form.requirementId
+                      : "",
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="选择项目" />
+              </SelectTrigger>
+              <SelectContent>
+                {props.projects.map((project) => (
+                  <SelectItem key={project.id} value={project.id}>
+                    {project.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>需求</Label>
+            <Select
+              value={props.form.requirementId || ALL_FILTER_VALUE}
+              onValueChange={(value) =>
+                props.onFormChange({
+                  ...props.form,
+                  requirementId: value === ALL_FILTER_VALUE ? "" : value,
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="无需求" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_FILTER_VALUE}>无需求</SelectItem>
+                {selectedRequirements.map((requirement) => (
+                  <SelectItem key={requirement.id} value={requirement.id}>
+                    {requirement.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -710,7 +849,7 @@ function TaskEditDialog(props: {
         </DialogClose>
         <DialogClose asChild>
           <Button type="button" onClick={() => void props.onSave()}>
-            保存
+            {props.mode === "create" ? "创建" : "保存"}
           </Button>
         </DialogClose>
       </DialogFooter>
@@ -786,4 +925,19 @@ function sortTasksForDisplay(rows: TaskRecord[]) {
   return [...rows].sort((a, b) => {
     return compareByStatusThenPriority(a, b)
   })
+}
+
+// 日期只展示本地日历日，避免 UTC 转换把选中的“今天”挪成前一天。
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, "0")
+  const day = `${date.getDate()}`.padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+// 默认周期往后顺延几天，保持新建任务一打开就有可用时间范围。
+function addDaysLocal(date: Date, days: number) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
 }

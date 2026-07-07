@@ -65,10 +65,14 @@ export function DatePickerField(props: DatePickerFieldProps) {
 
 function parseDateValue(value: string) {
   if (!value) return undefined
-  const date = new Date(`${value}T00:00:00`)
+  const [year, month, day] = value.split("-").map((part) => Number(part))
+  const date = new Date(year, month - 1, day)
   return Number.isNaN(date.getTime()) ? undefined : date
 }
 
 function formatDateValue(date: Date) {
-  return date.toISOString().slice(0, 10)
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, "0")
+  const day = `${date.getDate()}`.padStart(2, "0")
+  return `${year}-${month}-${day}`
 }
