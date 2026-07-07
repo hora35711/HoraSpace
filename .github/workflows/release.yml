@@ -80,6 +80,9 @@ jobs:
     needs: [build-windows, build-macos]
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download release assets
         uses: actions/download-artifact@v4
         with:
@@ -103,10 +106,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" release-assets/* --clobber
+          if gh release view "${GITHUB_REF_NAME}" --repo hora35711/HoraSpace >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" release-assets/* --repo hora35711/HoraSpace --clobber
           else
             gh release create "${GITHUB_REF_NAME}" release-assets/* \
+              --repo hora35711/HoraSpace \
               --title "HoraSpace ${GITHUB_REF_NAME}" \
               --notes-file release-notes.md
           fi
