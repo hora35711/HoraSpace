@@ -7,6 +7,7 @@ const { app, shell } = require("electron")
 const UPDATE_REPO_OWNER = "hora35711"
 const UPDATE_REPO_NAME = "HoraSpace"
 const UPDATE_RELEASES_URL = `https://github.com/${UPDATE_REPO_OWNER}/${UPDATE_REPO_NAME}/releases`
+const UPDATE_RELEASES_ATOM_URL = `${UPDATE_RELEASES_URL}.atom`
 const UPDATE_LATEST_API_URL = `https://api.github.com/repos/${UPDATE_REPO_OWNER}/${UPDATE_REPO_NAME}/releases/latest`
 const DEFAULT_UPDATE_SETTINGS = {
   enabled: false,
@@ -102,6 +103,62 @@ function buildReleaseSummary(body) {
   return firstParagraph || "这个版本暂时没有填写更新说明。"
 }
 
+function decodeXmlText(text) {
+  return String(text || "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+}
+
+function stripHtml(text) {
+  return decodeXmlText(text)
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+function isStableVersionTag(tagName) {
+  return /^v?\d+\.\d+\.\d+$/.test(String(tagName || "").trim())
+}
+
+function fetchText(url, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      url,
+      {
+        headers: {
+          "User-Agent": "HoraSpace",
+          ...headers,
+        },
+      },
+      (response) => {
+        const chunks = []
+
+        response.on("data", (chunk) => chunks.push(chunk))
+        response.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8")
+          if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
+            reject(new Error(`GitHub Release 页面请求失败：${response.statusCode || "unknown"} ${text}`))
+            return
+          }
+
+          resolve(text)
+        })
+      },
+    )
+
+    request.on("error", reject)
+    request.setTimeout(15000, () => {
+      request.destroy(new Error("GitHub Release 页面请求超时"))
+    })
+  })
+}
+
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
     const request = https.get(
@@ -169,6 +226,47 @@ function toReleaseInfo(release) {
   }
 }
 
+function parseAtomEntry(entryXml) {
+  const linkMatch = entryXml.match(/<link[^>]+href="([^"]+)"/)
+  const titleMatch = entryXml.match(/<title[^>]*>([\s\S]*?)<\/title>/)
+  const updatedMatch = entryXml.match(/<updated[^>]*>([\s\S]*?)<\/updated>/)
+  const contentMatch = entryXml.match(/<content[^>]*>([\s\S]*?)<\/content>/)
+  const releaseUrl = decodeXmlText(linkMatch?.[1] || "")
+  const tagName = releaseUrl.split("/").pop() || ""
+
+  if (!releaseUrl || !isStableVersionTag(tagName)) {
+    return null
+  }
+
+  const body = stripHtml(contentMatch?.[1] || "")
+  return {
+    version: stripVersionPrefix(tagName),
+    tagName,
+    name: stripHtml(titleMatch?.[1] || `HoraSpace ${tagName}`),
+    publishedAt: decodeXmlText(updatedMatch?.[1] || "") || null,
+    releaseUrl,
+    summary: buildReleaseSummary(body),
+    body,
+    assets: [],
+  }
+}
+
+async function fetchLatestReleaseInfo() {
+  try {
+    const atomText = await fetchText(UPDATE_RELEASES_ATOM_URL, {
+      Accept: "application/atom+xml,text/xml",
+    })
+    const entries = atomText.match(/<entry>[\s\S]*?<\/entry>/g) || []
+    const releaseInfo = entries.map(parseAtomEntry).find(Boolean)
+    if (releaseInfo) return releaseInfo
+    throw new Error("GitHub Releases Atom 中没有找到稳定版 tag")
+  } catch (atomError) {
+    console.warn("[hora] GitHub Releases Atom 检查失败，回退 REST API:", atomError)
+    const release = await fetchJson(UPDATE_LATEST_API_URL)
+    return toReleaseInfo(release)
+  }
+}
+
 async function checkForUpdates(reason = "manual") {
   const currentVersion = getCurrentVersion()
   updateStatus({
@@ -178,8 +276,7 @@ async function checkForUpdates(reason = "manual") {
   })
 
   try {
-    const release = await fetchJson(UPDATE_LATEST_API_URL)
-    const releaseInfo = toReleaseInfo(release)
+    const releaseInfo = await fetchLatestReleaseInfo()
     const hasUpdate = compareVersions(releaseInfo.version, currentVersion) > 0
     const checkedAt = new Date().toISOString()
     const settings = setUpdateSettings({ lastCheckedAt: checkedAt })
