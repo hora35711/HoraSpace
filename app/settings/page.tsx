@@ -16,6 +16,7 @@ import {
   setPluginEnabled,
   setUpdateSettings,
   updatePlugin,
+  deleteSpace,
   type PluginRecord,
   type PluginUiMode,
   type UpdateSettings,
@@ -45,7 +46,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ShimmerDemo } from "@/components/ui/shimmer"
-import { ArrowDown, ArrowUp, ExternalLink, FolderUp, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react"
+import { ArrowDown, ArrowUp, ExternalLink, FolderUp, RefreshCw, Settings2, SlidersHorizontal, Trash2 } from "lucide-react"
 import { SpaceDialog } from "@/components/space-dialog"
 import { getLanguageOptions, useAppLanguage, useT } from "@/lib/app-language"
 
@@ -189,6 +190,8 @@ export default function SettingsPage() {
   const [editorOpen, setEditorOpen] = React.useState(false)
   const [restartOpen, setRestartOpen] = React.useState(false)
   const [spaceRestartOpen, setSpaceRestartOpen] = React.useState(false)
+  const [deleteSpaceOpen, setDeleteSpaceOpen] = React.useState(false)
+  const [deletingSpace, setDeletingSpace] = React.useState(false)
   const [spaceDialogOpen, setSpaceDialogOpen] = React.useState(false)
   const [spaceDialogMode, setSpaceDialogMode] = React.useState<"create" | "migrate">("create")
   const [currentSpace, setCurrentSpace] = React.useState<SpaceRecord | null>(null)
@@ -316,6 +319,21 @@ export default function SettingsPage() {
     await loadSpaceState()
     await getPluginRootPath().then((path) => setStoragePath(path))
     setSpaceRestartOpen(true)
+  }
+
+  async function handleDeleteCurrentSpace() {
+    if (!currentSpace || spaceList.length <= 1) return
+    setDeletingSpace(true)
+    try {
+      // 删除空间只清理 Hora 管理的数据项，不删除用户选择的根目录本身。
+      await deleteSpace(currentSpace.id)
+      await loadSpaceState()
+      await getPluginRootPath().then((path) => setStoragePath(path))
+      setDeleteSpaceOpen(false)
+      setSpaceRestartOpen(true)
+    } finally {
+      setDeletingSpace(false)
+    }
   }
 
   function openCreateSpaceDialog() {
@@ -917,7 +935,19 @@ export default function SettingsPage() {
                   <Button type="button" onClick={() => void openCreateSpaceDialog()}>
                     创建或切换空间
                   </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={!currentSpace || spaceList.length <= 1}
+                    onClick={() => setDeleteSpaceOpen(true)}
+                  >
+                    <Trash2 className="size-4" />
+                    删除当前空间
+                  </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  删除当前空间只会移除该空间下的 hora.db、vault 和 plugins，以及空间列表里的这条记录。
+                </p>
               </CardContent>
             </Card>
           ) : section === "repository" ? (
@@ -1080,13 +1110,30 @@ export default function SettingsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={deleteSpaceOpen} onOpenChange={setDeleteSpaceOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除当前空间？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将从「{currentSpaceName}」删除 hora.db、vault 和 plugins，并从空间列表移除这条记录。不会删除路径「{currentSpacePath}」下的其它文件。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingSpace}>取消</AlertDialogCancel>
+            <AlertDialogAction disabled={deletingSpace} onClick={() => void handleDeleteCurrentSpace()}>
+              {deletingSpace ? "删除中..." : "确认删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <SpaceDialog
         open={spaceDialogOpen}
         mode={spaceDialogMode}
         title={spaceDialogMode === "migrate" ? "更改当前空间路径" : "创建空间"}
         description={
           spaceDialogMode === "migrate"
-            ? "选择新的空间目录后，会自动迁移当前空间的全部数据，并更新数据库路径。"
+            ? "选择新的空间目录后，只会移动当前空间的 hora.db、vault 和 plugins，并更新数据库路径。"
             : "选择空间目录并填写空间名称，创建后会把数据、数据库和插件都放到这个空间下。"
         }
         submitLabel={spaceDialogMode === "migrate" ? "迁移空间" : "创建并进入"}

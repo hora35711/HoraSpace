@@ -8,6 +8,7 @@ let registryCache = null
 
 const SPACE_REGISTRY_VERSION = 1
 const DEFAULT_SPACE_ID = "space_default"
+const SPACE_MANAGED_ENTRIES = ["hora.db", "vault", "plugins"]
 
 // 账号级配置目录：和空间数据目录分离，放全局配置与空间注册表。
 function getHoraConfigPath() {
@@ -53,6 +54,58 @@ function hasSpaceData(spacePath) {
   const vaultPath = path.join(spacePath, "vault")
   const pluginsPath = path.join(spacePath, "plugins")
   return fs.existsSync(dbPath) || fs.existsSync(vaultPath) || fs.existsSync(pluginsPath)
+}
+
+// Hora 只拥有空间根目录下这三项，迁移和删除都不能碰用户放在同级目录里的其它文件。
+function getManagedSpaceEntryPaths(spacePath) {
+  return SPACE_MANAGED_ENTRIES.map((entry) => ({
+    name: entry,
+    sourcePath: path.join(spacePath, entry),
+  }))
+}
+
+// 目标路径里如果已有 Hora 管理项，先阻止迁移，避免覆盖另一个空间的数据。
+function assertManagedTargetsAvailable(targetRootPath) {
+  const existingEntries = SPACE_MANAGED_ENTRIES.filter((entry) => fs.existsSync(path.join(targetRootPath, entry)))
+  if (existingEntries.length > 0) {
+    throw new Error(`目标路径已存在 ${existingEntries.join("、")}，请先选择没有 Hora 数据的文件夹`)
+  }
+}
+
+// 目标目录不能放进旧的 Hora 管理目录里，否则移动后清理旧数据会把目标一并删掉。
+function assertTargetOutsideManagedSources(sourceRootPath, targetRootPath) {
+  const resolvedTarget = path.resolve(targetRootPath)
+  for (const entry of getManagedSpaceEntryPaths(sourceRootPath)) {
+    const resolvedSource = path.resolve(entry.sourcePath)
+    const relativePath = path.relative(resolvedSource, resolvedTarget)
+    if (relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
+      throw new Error("目标路径不能放在当前空间的 vault 或 plugins 目录里")
+    }
+  }
+}
+
+// 只移动 Hora 管理的数据项，保留原目录下用户自己的其它文件。
+function moveManagedSpaceEntries(sourceRootPath, targetRootPath) {
+  for (const entry of getManagedSpaceEntryPaths(sourceRootPath)) {
+    if (!fs.existsSync(entry.sourcePath)) continue
+    const targetPath = path.join(targetRootPath, entry.name)
+    fs.cpSync(entry.sourcePath, targetPath, { recursive: true, force: false })
+  }
+
+  for (const entry of getManagedSpaceEntryPaths(sourceRootPath)) {
+    if (fs.existsSync(entry.sourcePath)) {
+      fs.rmSync(entry.sourcePath, { recursive: true, force: true })
+    }
+  }
+}
+
+// 删除空间时也只删除 Hora 管理的数据项，不删除空间根目录本身。
+function removeManagedSpaceEntries(spacePath) {
+  for (const entry of getManagedSpaceEntryPaths(spacePath)) {
+    if (fs.existsSync(entry.sourcePath)) {
+      fs.rmSync(entry.sourcePath, { recursive: true, force: true })
+    }
+  }
 }
 
 // 标准化空间记录：补齐默认字段并做最小清洗。
@@ -275,14 +328,20 @@ function renameSpace(spaceId, name) {
   return changedSpace
 }
 
-// 删除空间：默认只从列表移除，不自动删盘，避免误删用户文件。
+// 删除空间：只清理 Hora 管理的三项数据，再从账号级空间列表移除。
 function deleteSpace(spaceId) {
   const registry = loadSpaceRegistry()
+  const deletingSpace = registry.spaces.find((space) => space.id === spaceId)
+  if (!deletingSpace) {
+    throw new Error("空间不存在")
+  }
+
   const nextSpaces = registry.spaces.filter((space) => space.id !== spaceId)
   if (nextSpaces.length === 0) {
     throw new Error("至少保留一个空间")
   }
 
+  removeManagedSpaceEntries(deletingSpace.rootPath)
   registry.spaces = nextSpaces
   if (registry.currentSpaceId === spaceId) {
     registry.currentSpaceId = nextSpaces[0].id
@@ -291,7 +350,7 @@ function deleteSpace(spaceId) {
   return true
 }
 
-// 迁移当前空间到新路径：先复制再删除旧目录，确保数据完整。
+// 迁移当前空间到新路径：只移动 hora.db、vault、plugins，不能移动用户自己的同级文件。
 function moveCurrentSpaceRootPath(targetRootPath) {
   const currentSpace = getCurrentSpace()
   if (!currentSpace) {
@@ -306,17 +365,14 @@ function moveCurrentSpaceRootPath(targetRootPath) {
     return currentSpace
   }
 
-  const targetExists = fs.existsSync(nextRootPath)
-  if (targetExists && fs.readdirSync(nextRootPath).length > 0) {
-    throw new Error("目标路径不为空，请先选择空文件夹")
-  }
-
   const sourceRootPath = currentSpace.rootPath
   ensureSpaceLayout(sourceRootPath)
   fs.mkdirSync(path.dirname(nextRootPath), { recursive: true })
   fs.mkdirSync(nextRootPath, { recursive: true })
-  fs.cpSync(sourceRootPath, nextRootPath, { recursive: true, force: true })
-  fs.rmSync(sourceRootPath, { recursive: true, force: true })
+  assertTargetOutsideManagedSources(sourceRootPath, nextRootPath)
+  assertManagedTargetsAvailable(nextRootPath)
+  moveManagedSpaceEntries(sourceRootPath, nextRootPath)
+  ensureSpaceLayout(nextRootPath)
 
   const registry = loadSpaceRegistry()
   const now = new Date().toISOString()

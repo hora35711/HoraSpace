@@ -251,6 +251,11 @@ function registerDbIpc() {
     return result
   })
   ipcMain.handle("db:spaces:delete", (_event, spaceId) => {
+    const currentSpace = space.getCurrentSpace()
+    if (currentSpace?.id === spaceId) {
+      // 删除当前空间前先关闭数据库和文件监听，避免 hora.db 被运行时占用。
+      db.resetRuntime()
+    }
     const result = space.deleteSpace(spaceId)
     reloadCurrentSpaceRuntime()
     return result

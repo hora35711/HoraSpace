@@ -125,7 +125,7 @@ export function SpaceDialog({
             <p className="text-xs text-muted-foreground">
               {mode === "create"
                 ? t("selectSpaceDirectoryDescription")
-                : "选择新的文件夹后会自动移动当前空间全部数据，并更新数据库路径。"}
+                : "选择新的文件夹后只会移动 hora.db、vault 和 plugins，并更新数据库路径。"}
             </p>
           </div>
 
