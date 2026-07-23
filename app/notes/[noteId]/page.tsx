@@ -8,8 +8,9 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 import MarkdownIt from "markdown-it"
 import TurndownService from "turndown"
 import { Plus, X } from "lucide-react"
-import { serializeAsJSON } from "@excalidraw/excalidraw"
+import { MainMenu, serializeAsJSON } from "@excalidraw/excalidraw"
 import { SimpleEditor } from "@/components/tiptap-templates/simple/simple-editor"
+import { type AppLanguage, useAppLanguage } from "@/lib/app-language"
 import { Button } from "@/components/ui/button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import {
@@ -57,6 +58,12 @@ type EditorTab = {
 }
 
 type NoteFileKind = "markdown" | "drawing" | "text" | "external"
+
+// Hora 全局语言和 Excalidraw 语言码不完全一致，这里集中做映射。
+function getExcalidrawLanguageCode(language: AppLanguage) {
+  if (language === "en-US") return "en"
+  return language
+}
 
 // 兼容新旧绘图后缀：新格式 .excalidraw.md，老格式 .excalidraw。
 function isDrawingPath(filePath: string | null | undefined) {
@@ -126,6 +133,8 @@ export default function NoteEditorPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const openKey = searchParams.get("open")
+  const { language } = useAppLanguage()
+  const excalidrawLanguageCode = getExcalidrawLanguageCode(language)
 
   // 页面标题：显示当前笔记标题。
   const [title, setTitle] = useState("笔记")
@@ -503,8 +512,7 @@ export default function NoteEditorPage() {
       return
     }
 
-    let currentPromise: Promise<void>
-    currentPromise = handleSave().finally(() => {
+    const currentPromise = handleSave().finally(() => {
       if (saveInFlightRef.current === currentPromise) {
         saveInFlightRef.current = null
       }
@@ -737,7 +745,7 @@ export default function NoteEditorPage() {
   }
 
   return (
-    <section className="flex h-[calc(100vh-2rem)] flex-col">
+    <section aria-label={title} className="flex h-[calc(100vh-2rem)] flex-col">
       {/* 第一行：左侧展开按钮 + 标签行（同一行）。 */}
       <header className="mb-2 flex items-center gap-2 border-b border-border pb-2">
         <SidebarTrigger className="shrink-0" />
@@ -834,11 +842,12 @@ export default function NoteEditorPage() {
           {/* 编辑区：去掉外层圆角和内缩，消除边框间距。 */}
           <div ref={editorSurfaceRef} className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             {noteFileKind === "drawing" ? (
-              <div className="h-full min-h-0">
+              <div className="hora-excalidraw-shell h-full min-h-0">
                 {drawingReady ? (
                   <Excalidraw
                     key={`${activeTabId}:${noteId ?? activeTab?.noteId ?? "blank"}:${drawingRenderVersion}`}
                     initialData={drawingInitialData}
+                    langCode={excalidrawLanguageCode}
                     // 自动聚焦画布，确保复制/粘贴等快捷键可直接命中 Excalidraw。
                     autoFocus
                     excalidrawAPI={(api) => {
@@ -850,7 +859,22 @@ export default function NoteEditorPage() {
                       drawingSceneRef.current = { elements, appState, files }
                       markUnsavedChanges()
                     }}
-                  />
+                  >
+                    {/* 自定义主菜单：不渲染 Socials/Excalidraw links，避免出现外部品牌链接入口。 */}
+                    <MainMenu>
+                      <MainMenu.DefaultItems.LoadScene />
+                      <MainMenu.DefaultItems.SaveToActiveFile />
+                      <MainMenu.DefaultItems.Export />
+                      <MainMenu.DefaultItems.SaveAsImage />
+                      <MainMenu.DefaultItems.SearchMenu />
+                      <MainMenu.DefaultItems.CommandPalette />
+                      <MainMenu.DefaultItems.ClearCanvas />
+                      <MainMenu.Separator />
+                      <MainMenu.DefaultItems.ToggleTheme />
+                      <MainMenu.DefaultItems.ChangeCanvasBackground />
+                      <MainMenu.DefaultItems.Help />
+                    </MainMenu>
+                  </Excalidraw>
                 ) : (
                   // 绘图内容加载中占位：避免出现“先空白后不刷新”的错觉。
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

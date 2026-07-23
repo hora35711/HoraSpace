@@ -140,6 +140,11 @@
     background-size: 200% 100%;
     animation: shimmer-move 1.35s linear infinite;
   }
+
+  /* Excalidraw 嵌入模式：隐藏官方 Library 入口，保留 Hora 自己的绘图工作流。 */
+  .hora-excalidraw-shell .default-sidebar-trigger {
+    display: none !important;
+  }
 }
 
 @keyframes shimmer-move {
