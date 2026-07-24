@@ -175,6 +175,178 @@ export type UpdateSnapshot = {
   status: UpdateStatus
 }
 
+export type MailAddress = {
+  name: string
+  address: string
+}
+
+export type MailFolderRole = "inbox" | "sent" | "drafts" | "trash" | "archive" | "junk" | "custom"
+
+export type MailAccountRecord = {
+  id: string
+  scope: "global" | "space"
+  workspaceId: string | null
+  emailAddress: string
+  displayName: string | null
+  authType: "password" | "oauth2"
+  imapHost: string
+  imapPort: number
+  imapSecure: boolean
+  smtpHost: string
+  smtpPort: number
+  smtpSecure: boolean
+  username: string
+  syncEnabled: boolean
+  syncMode: "manual" | "interval" | "realtime"
+  syncIntervalMinutes: number
+  lastSyncAt: string | null
+  lastError: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type MailFolderRecord = {
+  id: string
+  accountId: string
+  path: string
+  name: string
+  role: MailFolderRole
+  delimiter: string | null
+  uidValidity: string | null
+  uidNext: number | null
+  highestModseq: string | null
+  totalCount: number
+  unreadCount: number
+  sortOrder: number
+  isRemote: boolean
+  updatedAt: string
+}
+
+export type MailTreeAccount = MailAccountRecord & {
+  folders: MailFolderRecord[]
+}
+
+export type MailAttachmentRecord = {
+  id: string
+  filename: string
+  contentType: string | null
+  size: number
+  contentId: string | null
+  cachePath: string | null
+  downloadedAt: string | null
+}
+
+export type MailMessageRecord = {
+  id: string
+  accountId: string
+  folderId: string
+  messageUid: string | null
+  messageId: string | null
+  subject: string | null
+  from: MailAddress[]
+  to: MailAddress[]
+  cc: MailAddress[]
+  bcc: MailAddress[]
+  replyTo: MailAddress[]
+  sentAt: string | null
+  receivedAt: string | null
+  snippet: string | null
+  flags: string[]
+  isRead: boolean
+  isStarred: boolean
+  hasAttachments: boolean
+  size: number
+  bodyCachePath: string | null
+  rawCachePath: string | null
+  pendingAction: string | null
+  syncStatus: "synced" | "pending" | "error"
+  lastError: string | null
+  updatedAt: string
+  reminderId?: string | null
+  remindAt?: string | null
+}
+
+export type MailMessageDetail = MailMessageRecord & {
+  body: {
+    textBody: string | null
+    htmlBody: string | null
+    downloadedAt: string | null
+  }
+  attachments: MailAttachmentRecord[]
+}
+
+export type MailDraftRecord = {
+  id: string
+  accountId: string
+  folderId: string | null
+  messageId: string | null
+  to: MailAddress[]
+  cc: MailAddress[]
+  bcc: MailAddress[]
+  subject: string | null
+  textBody: string | null
+  htmlBody: string | null
+  attachments: unknown[]
+  syncStatus: "local" | "pending" | "synced" | "error"
+  lastError: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type MailNotificationSettings = {
+  workspaceId: string
+  enabled: boolean
+  inboxOnly: boolean
+  includeBodyPreview: boolean
+  quietStart: string | null
+  quietEnd: string | null
+  updatedAt: string | null
+}
+
+export type MailReminderRecord = {
+  id: string
+  messageId: string
+  remindAt: string
+  status: "pending" | "delivered" | "cancelled"
+  note: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type MailRuleRecord = {
+  id: string
+  accountId: string | null
+  name: string
+  ruleType: "archive" | "block"
+  field: "from" | "sender_name" | "subject"
+  operator: "contains" | "equals"
+  value: string
+  targetFolderId: string | null
+  enabled: boolean
+  appliedCount?: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type MailAccountInput = {
+  id?: string
+  scope: "global" | "space"
+  emailAddress: string
+  displayName?: string | null
+  authType?: "password" | "oauth2"
+  imapHost: string
+  imapPort: number
+  imapSecure: boolean
+  smtpHost: string
+  smtpPort: number
+  smtpSecure: boolean
+  username: string
+  password?: string
+  syncEnabled?: boolean
+  syncMode?: "manual" | "interval" | "realtime"
+  syncIntervalMinutes?: number
+}
+
 function requireHoraDB() {
   if (typeof window !== "undefined" && window.horaDB) {
     return window.horaDB
@@ -430,6 +602,214 @@ export async function openReleasePage(releaseUrl?: string) {
   if (typeof window !== "undefined" && window.horaDB?.openReleasePage) return window.horaDB.openReleasePage(releaseUrl)
   if (releaseUrl) window.open(releaseUrl, "_blank", "noopener,noreferrer")
   return Boolean(releaseUrl)
+}
+
+export async function listMailAccounts(): Promise<MailAccountRecord[]> {
+  if (typeof window !== "undefined" && window.horaDB?.listMailAccounts) return window.horaDB.listMailAccounts()
+  return []
+}
+
+export async function saveMailAccount(input: MailAccountInput): Promise<MailAccountRecord | null> {
+  const result = await requireHoraDB().saveMailAccount(input)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function testMailAccount(input: MailAccountInput): Promise<{ ok: boolean; error: string | null }> {
+  if (typeof window !== "undefined" && window.horaDB?.testMailAccount) return window.horaDB.testMailAccount(input)
+  return { ok: false, error: "当前不是 Electron 运行环境，无法测试邮箱账号" }
+}
+
+export async function deleteMailAccount(accountId: string): Promise<boolean> {
+  const result = await requireHoraDB().deleteMailAccount(accountId)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function syncMailAccount(accountId: string): Promise<{ ok: boolean; folders: number; messages: number; error: string | null }> {
+  const result = await requireHoraDB().syncMailAccount(accountId)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function listMailTree(): Promise<MailTreeAccount[]> {
+  if (typeof window !== "undefined" && window.horaDB?.listMailTree) return window.horaDB.listMailTree()
+  return []
+}
+
+export async function listMailFolders(accountId: string): Promise<MailFolderRecord[]> {
+  if (typeof window !== "undefined" && window.horaDB?.listMailFolders) return window.horaDB.listMailFolders(accountId)
+  return []
+}
+
+export async function createMailFolder(input: { accountId: string; name: string }): Promise<MailFolderRecord | null> {
+  const result = await requireHoraDB().createMailFolder(input)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function renameMailFolder(input: { folderId: string; name: string }): Promise<MailFolderRecord | null> {
+  const result = await requireHoraDB().renameMailFolder(input)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function deleteMailFolder(input: { folderId: string }): Promise<{ ok: boolean; inboxFolderId: string }> {
+  const result = await requireHoraDB().deleteMailFolder(input)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function listMailMessages(input: { folderId: string; limit?: number; offset?: number }): Promise<MailMessageRecord[]> {
+  if (typeof window !== "undefined" && window.horaDB?.listMailMessages) return window.horaDB.listMailMessages(input)
+  return []
+}
+
+export async function listMailReminderMessages(): Promise<MailMessageRecord[]> {
+  if (typeof window !== "undefined" && window.horaDB?.listMailReminderMessages) return window.horaDB.listMailReminderMessages()
+  return []
+}
+
+export async function getMailMessage(messageId: string): Promise<MailMessageDetail | null> {
+  if (typeof window !== "undefined" && window.horaDB?.getMailMessage) return window.horaDB.getMailMessage(messageId)
+  return null
+}
+
+export async function updateMailMessageState(input: {
+  messageId: string
+  isRead?: boolean
+  isStarred?: boolean
+  pendingAction?: string
+}): Promise<MailMessageDetail | null> {
+  const result = await requireHoraDB().updateMailMessageState(input)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function moveMailMessage(input: { messageId: string; targetFolderId: string }): Promise<MailMessageDetail | null> {
+  const result = await requireHoraDB().moveMailMessage(input)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function deleteMailMessage(messageId: string): Promise<boolean> {
+  const result = await requireHoraDB().deleteMailMessage(messageId)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function markMailFolderRead(folderId: string): Promise<{ ok: boolean; changedCount: number; error?: string | null }> {
+  const result = await requireHoraDB().markMailFolderRead(folderId)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function saveMailReminder(input: { messageId: string; remindAt: string; note?: string | null }): Promise<MailReminderRecord | null> {
+  const result = await requireHoraDB().saveMailReminder(input)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function listMailRules(accountId?: string | null): Promise<MailRuleRecord[]> {
+  if (typeof window !== "undefined" && window.horaDB?.listMailRules) return window.horaDB.listMailRules(accountId || null)
+  return []
+}
+
+export async function saveMailRule(input: {
+  id?: string
+  accountId?: string | null
+  name?: string
+  ruleType: "archive" | "block"
+  field: "from" | "sender_name" | "subject"
+  operator?: "contains" | "equals"
+  value: string
+  targetFolderId?: string | null
+  enabled?: boolean
+  applyExisting?: boolean
+}): Promise<MailRuleRecord | null> {
+  const result = await requireHoraDB().saveMailRule(input)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function deleteMailRule(ruleId: string): Promise<boolean> {
+  const result = await requireHoraDB().deleteMailRule(ruleId)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function blockMailSender(input: { messageId: string }): Promise<MailRuleRecord | null> {
+  const result = await requireHoraDB().blockMailSender(input)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function getMailNotificationSettings(): Promise<MailNotificationSettings> {
+  if (typeof window !== "undefined" && window.horaDB?.getMailNotificationSettings) {
+    return window.horaDB.getMailNotificationSettings()
+  }
+  return {
+    workspaceId: "local",
+    enabled: false,
+    inboxOnly: true,
+    includeBodyPreview: false,
+    quietStart: null,
+    quietEnd: null,
+    updatedAt: null,
+  }
+}
+
+export async function saveMailNotificationSettings(input: Partial<Omit<MailNotificationSettings, "workspaceId" | "updatedAt">>): Promise<MailNotificationSettings> {
+  const result = await requireHoraDB().saveMailNotificationSettings(input)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function listMailDrafts(accountId: string): Promise<MailDraftRecord[]> {
+  if (typeof window !== "undefined" && window.horaDB?.listMailDrafts) return window.horaDB.listMailDrafts(accountId)
+  return []
+}
+
+export async function saveMailDraft(input: {
+  id?: string
+  accountId: string
+  folderId?: string | null
+  messageId?: string | null
+  to?: MailAddress[]
+  cc?: MailAddress[]
+  bcc?: MailAddress[]
+  subject?: string
+  textBody?: string
+  htmlBody?: string | null
+  attachments?: unknown[]
+  syncStatus?: "local" | "pending" | "synced" | "error"
+  lastError?: string | null
+}): Promise<MailDraftRecord | null> {
+  const result = await requireHoraDB().saveMailDraft(input)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function deleteMailDraft(draftId: string): Promise<boolean> {
+  const result = await requireHoraDB().deleteMailDraft(draftId)
+  notifyHoraDbUpdated("mail")
+  return result
+}
+
+export async function sendMail(input: {
+  accountId: string
+  draftId?: string
+  to: string[]
+  cc?: string[]
+  bcc?: string[]
+  subject?: string
+  textBody?: string
+  htmlBody?: string
+  attachments?: unknown[]
+}): Promise<{ ok: boolean; messageId: string | null }> {
+  const result = await requireHoraDB().sendMail(input)
+  notifyHoraDbUpdated("mail")
+  return result
 }
 
 export async function getSpaceBootstrapState(): Promise<{

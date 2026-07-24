@@ -46,8 +46,9 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ShimmerDemo } from "@/components/ui/shimmer"
-import { ArrowDown, ArrowUp, ExternalLink, FolderUp, RefreshCw, Settings2, SlidersHorizontal, Trash2 } from "lucide-react"
+import { ArrowDown, ArrowUp, ExternalLink, FolderUp, Mail, RefreshCw, Settings2, SlidersHorizontal, Trash2 } from "lucide-react"
 import { SpaceDialog } from "@/components/space-dialog"
+import { MailSettingsPanel } from "@/components/mail-client"
 import { getLanguageOptions, useAppLanguage, useT } from "@/lib/app-language"
 
 import {
@@ -59,7 +60,7 @@ import {
   type SpaceRecord,
 } from "@/lib/hora-db"
 
-type SettingsSection = "general" | "language" | "location" | "repository" | "plugins" | "extensions"
+type SettingsSection = "general" | "language" | "location" | "repository" | "mail" | "plugins" | "extensions"
 
 type PluginDraft = {
   pluginKey: string
@@ -506,6 +507,13 @@ export default function SettingsPage() {
               onClick={() => setSection("repository")}
             />
             <MenuButton
+              active={section === "mail"}
+              icon={<Mail className="size-4" />}
+              label={t("mail")}
+              description="IMAP/SMTP 账号、同步和离线缓存"
+              onClick={() => setSection("mail")}
+            />
+            <MenuButton
               active={section === "plugins"}
               icon={<FolderUp className="size-4" />}
               label={t("plugins")}
@@ -523,7 +531,9 @@ export default function SettingsPage() {
         </Card>
 
         <div className="space-y-6">
-          {section === "plugins" ? (
+          {section === "mail" ? (
+            <MailSettingsPanel />
+          ) : section === "plugins" ? (
             <>
               <div className="grid gap-4 md:grid-cols-4">
                 <Card>

@@ -38,6 +38,11 @@ function getPluginsRootPath() {
   return path.join(getHoraDataPath(), "plugins")
 }
 
+// 统一路径：邮件离线缓存目录，附件和原始正文文件不直接塞进 SQLite。
+function getMailCachePath() {
+  return path.join(getHoraDataPath(), "mail-cache")
+}
+
 // 确保插件根目录存在：打包后插件包必须落在用户可写路径。
 function ensurePluginsRootPath() {
   const pluginsPath = getPluginsRootPath()
@@ -571,6 +576,228 @@ function ensurePluginSchema(db) {
   `)
 }
 
+// 确保邮件表存在：账号、文件夹、邮件、正文、附件和同步游标都走本地缓存。
+function ensureMailSchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mail_accounts (
+      id TEXT PRIMARY KEY,
+      scope TEXT NOT NULL DEFAULT 'global' CHECK (scope IN ('global', 'space')),
+      workspace_id TEXT,
+      email_address TEXT NOT NULL,
+      display_name TEXT,
+      auth_type TEXT NOT NULL DEFAULT 'password' CHECK (auth_type IN ('password', 'oauth2')),
+      imap_host TEXT NOT NULL,
+      imap_port INTEGER NOT NULL DEFAULT 993,
+      imap_secure INTEGER NOT NULL DEFAULT 1,
+      smtp_host TEXT NOT NULL,
+      smtp_port INTEGER NOT NULL DEFAULT 465,
+      smtp_secure INTEGER NOT NULL DEFAULT 1,
+      username TEXT NOT NULL,
+      credential_ref TEXT,
+      sync_enabled INTEGER NOT NULL DEFAULT 1,
+      sync_mode TEXT NOT NULL DEFAULT 'manual' CHECK (sync_mode IN ('manual', 'interval', 'realtime')),
+      sync_interval_minutes INTEGER NOT NULL DEFAULT 15,
+      last_sync_at TEXT,
+      last_error TEXT,
+      is_deleted INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mail_accounts_scope
+    ON mail_accounts(scope, workspace_id, is_deleted, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS mail_account_bindings (
+      account_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, workspace_id),
+      FOREIGN KEY (account_id) REFERENCES mail_accounts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS mail_folders (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'custom'
+        CHECK (role IN ('inbox', 'sent', 'drafts', 'trash', 'archive', 'junk', 'custom')),
+      delimiter TEXT,
+      uid_validity TEXT,
+      uid_next INTEGER,
+      highest_modseq TEXT,
+      total_count INTEGER NOT NULL DEFAULT 0,
+      unread_count INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_remote INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (account_id) REFERENCES mail_accounts(id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_mail_folders_account_path
+    ON mail_folders(account_id, path);
+
+    CREATE INDEX IF NOT EXISTS idx_mail_folders_account_role
+    ON mail_folders(account_id, role, sort_order);
+
+    CREATE TABLE IF NOT EXISTS mail_messages (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      folder_id TEXT NOT NULL,
+      message_uid TEXT,
+      message_id TEXT,
+      subject TEXT,
+      from_json TEXT NOT NULL DEFAULT '[]',
+      to_json TEXT NOT NULL DEFAULT '[]',
+      cc_json TEXT NOT NULL DEFAULT '[]',
+      bcc_json TEXT NOT NULL DEFAULT '[]',
+      reply_to_json TEXT NOT NULL DEFAULT '[]',
+      sent_at TEXT,
+      received_at TEXT,
+      snippet TEXT,
+      flags_json TEXT NOT NULL DEFAULT '[]',
+      is_read INTEGER NOT NULL DEFAULT 0,
+      is_starred INTEGER NOT NULL DEFAULT 0,
+      has_attachments INTEGER NOT NULL DEFAULT 0,
+      size INTEGER NOT NULL DEFAULT 0,
+      body_cache_path TEXT,
+      raw_cache_path TEXT,
+      pending_action TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'synced'
+        CHECK (sync_status IN ('synced', 'pending', 'error')),
+      last_error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (account_id) REFERENCES mail_accounts(id),
+      FOREIGN KEY (folder_id) REFERENCES mail_folders(id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_mail_messages_account_folder_uid
+    ON mail_messages(account_id, folder_id, message_uid)
+    WHERE message_uid IS NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_mail_messages_folder_received
+    ON mail_messages(folder_id, received_at DESC, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS mail_bodies (
+      message_id TEXT PRIMARY KEY,
+      text_body TEXT,
+      html_body TEXT,
+      content_hash TEXT,
+      downloaded_at TEXT,
+      FOREIGN KEY (message_id) REFERENCES mail_messages(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS mail_attachments (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      content_type TEXT,
+      size INTEGER NOT NULL DEFAULT 0,
+      content_id TEXT,
+      cache_path TEXT,
+      downloaded_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (message_id) REFERENCES mail_messages(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mail_attachments_message
+    ON mail_attachments(message_id);
+
+    CREATE TABLE IF NOT EXISTS mail_drafts (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      folder_id TEXT,
+      message_id TEXT,
+      to_json TEXT NOT NULL DEFAULT '[]',
+      cc_json TEXT NOT NULL DEFAULT '[]',
+      bcc_json TEXT NOT NULL DEFAULT '[]',
+      subject TEXT,
+      text_body TEXT,
+      html_body TEXT,
+      attachments_json TEXT NOT NULL DEFAULT '[]',
+      remote_uid TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'local'
+        CHECK (sync_status IN ('local', 'pending', 'synced', 'error')),
+      last_error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (account_id) REFERENCES mail_accounts(id),
+      FOREIGN KEY (folder_id) REFERENCES mail_folders(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mail_drafts_account_updated
+    ON mail_drafts(account_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS mail_sync_state (
+      account_id TEXT NOT NULL,
+      folder_id TEXT NOT NULL,
+      sync_phase TEXT NOT NULL DEFAULT 'idle',
+      last_synced_uid TEXT,
+      last_synced_modseq TEXT,
+      last_full_sync_at TEXT,
+      last_incremental_sync_at TEXT,
+      last_error TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, folder_id),
+      FOREIGN KEY (account_id) REFERENCES mail_accounts(id),
+      FOREIGN KEY (folder_id) REFERENCES mail_folders(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS mail_notification_settings (
+      workspace_id TEXT PRIMARY KEY,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      inbox_only INTEGER NOT NULL DEFAULT 1,
+      include_body_preview INTEGER NOT NULL DEFAULT 0,
+      quiet_start TEXT,
+      quiet_end TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS mail_reminders (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL,
+      remind_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'cancelled')),
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (message_id) REFERENCES mail_messages(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mail_reminders_due
+    ON mail_reminders(status, remind_at);
+
+    CREATE TABLE IF NOT EXISTS mail_rules (
+      id TEXT PRIMARY KEY,
+      account_id TEXT,
+      name TEXT NOT NULL,
+      rule_type TEXT NOT NULL DEFAULT 'archive'
+        CHECK (rule_type IN ('archive', 'block')),
+      field TEXT NOT NULL DEFAULT 'from'
+        CHECK (field IN ('from', 'sender_name', 'subject')),
+      operator TEXT NOT NULL DEFAULT 'contains'
+        CHECK (operator IN ('contains', 'equals')),
+      value TEXT NOT NULL,
+      target_folder_id TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (account_id) REFERENCES mail_accounts(id),
+      FOREIGN KEY (target_folder_id) REFERENCES mail_folders(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mail_rules_account_enabled
+    ON mail_rules(account_id, enabled, rule_type);
+  `)
+
+  // 旧空间升级：新增同步策略字段，不影响已经保存的账号。
+  ensureColumn(db, "mail_accounts", "sync_mode", "TEXT NOT NULL DEFAULT 'manual'")
+  ensureColumn(db, "mail_accounts", "sync_interval_minutes", "INTEGER NOT NULL DEFAULT 15")
+  ensureColumn(db, "mail_folders", "is_remote", "INTEGER NOT NULL DEFAULT 1")
+}
+
 // 读取插件清单：扫描根目录 plugins/ 下的每个插件包。
 function scanPluginManifests() {
   const pluginsPath = ensurePluginsRootPath()
@@ -929,6 +1156,7 @@ function initDatabase() {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true })
   fs.mkdirSync(getVaultPath(), { recursive: true })
   fs.mkdirSync(getNotesPath(), { recursive: true })
+  fs.mkdirSync(getMailCachePath(), { recursive: true })
 
   const db = new Database(dbPath)
   db.pragma("journal_mode = DELETE")
@@ -941,6 +1169,7 @@ function initDatabase() {
   ensureNoteSchema(db)
   ensureProjectSchema(db)
   ensurePluginSchema(db)
+  ensureMailSchema(db)
   ensureDefaultWelcomeFile()
 
   return db
@@ -2073,11 +2302,1406 @@ function startNotesWatcher(onNotesChanged) {
   return notesWatcher
 }
 
+// JSON 安全解析：邮件地址、flags、附件清单都以 JSON 存储，坏数据不阻断界面。
+function parseJsonArray(raw) {
+  try {
+    const parsed = JSON.parse(raw || "[]")
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+// JSON 安全序列化：保证数据库里始终保存数组结构。
+function stringifyArray(value) {
+  return JSON.stringify(Array.isArray(value) ? value : [])
+}
+
+// 邮件文件夹角色归一化：IMAP 特殊用途标记缺失时按常见名称兜底。
+function normalizeMailFolderRole(folder) {
+  const rawRole = String(folder?.role || "").toLowerCase()
+  if (["inbox", "sent", "drafts", "trash", "archive", "junk"].includes(rawRole)) return rawRole
+
+  const name = String(folder?.name || folder?.path || "").toLowerCase()
+  if (name === "inbox" || name.includes("收件")) return "inbox"
+  if (name.includes("sent") || name.includes("已发送")) return "sent"
+  if (name.includes("draft") || name.includes("草稿")) return "drafts"
+  if (name.includes("trash") || name.includes("deleted") || name.includes("废纸") || name.includes("已删除")) return "trash"
+  if (name.includes("archive") || name.includes("归档")) return "archive"
+  if (name.includes("junk") || name.includes("spam") || name.includes("垃圾")) return "junk"
+  return "custom"
+}
+
+// 构造稳定文件夹 ID：同一账号同一路径重复同步时不会产生重复节点。
+function buildMailFolderId(accountId, folderPath) {
+  return buildNodeId("mail_folder", `${accountId}:${folderPath}`)
+}
+
+// 构造稳定邮件 ID：远端 UID 优先，草稿或本地邮件使用 messageId 兜底。
+function buildMailMessageId(accountId, folderId, messageUid, messageId) {
+  return buildNodeId("mail_msg", `${accountId}:${folderId}:${messageUid || messageId || crypto.randomUUID()}`)
+}
+
+// 把账号行转成前端结构，避免把凭据引用泄露给渲染层。
+function hydrateMailAccount(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    scope: row.scope,
+    workspaceId: row.workspaceId,
+    emailAddress: row.emailAddress,
+    displayName: row.displayName,
+    authType: row.authType,
+    imapHost: row.imapHost,
+    imapPort: row.imapPort,
+    imapSecure: row.imapSecure === 1,
+    smtpHost: row.smtpHost,
+    smtpPort: row.smtpPort,
+    smtpSecure: row.smtpSecure === 1,
+    username: row.username,
+    syncEnabled: row.syncEnabled === 1,
+    syncMode: row.syncMode || "manual",
+    syncIntervalMinutes: row.syncIntervalMinutes || 15,
+    lastSyncAt: row.lastSyncAt,
+    lastError: row.lastError,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+// 把文件夹行转成前端结构，同时保留 unread/total 计数。
+function hydrateMailFolder(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    path: row.path,
+    name: row.name,
+    role: row.role,
+    delimiter: row.delimiter,
+    uidValidity: row.uidValidity,
+    uidNext: row.uidNext,
+    highestModseq: row.highestModseq,
+    totalCount: row.totalCount,
+    unreadCount: row.unreadCount,
+    sortOrder: row.sortOrder,
+    isRemote: row.isRemote !== 0,
+    updatedAt: row.updatedAt,
+  }
+}
+
+// 把邮件行转成前端结构，列表和详情共用同一个基础映射。
+function hydrateMailMessage(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    folderId: row.folderId,
+    messageUid: row.messageUid,
+    messageId: row.messageId,
+    subject: row.subject,
+    from: parseJsonArray(row.fromJson),
+    to: parseJsonArray(row.toJson),
+    cc: parseJsonArray(row.ccJson),
+    bcc: parseJsonArray(row.bccJson),
+    replyTo: parseJsonArray(row.replyToJson),
+    sentAt: row.sentAt,
+    receivedAt: row.receivedAt,
+    snippet: row.snippet,
+    flags: parseJsonArray(row.flagsJson),
+    isRead: row.isRead === 1,
+    isStarred: row.isStarred === 1,
+    hasAttachments: row.hasAttachments === 1,
+    size: row.size,
+    bodyCachePath: row.bodyCachePath,
+    rawCachePath: row.rawCachePath,
+    pendingAction: row.pendingAction,
+    syncStatus: row.syncStatus,
+    lastError: row.lastError,
+    updatedAt: row.updatedAt,
+    reminderId: row.reminderId || null,
+    remindAt: row.remindAt || null,
+  }
+}
+
+// 把规则行转成前端结构，规则只保存匹配条件和目标文件夹引用。
+function hydrateMailRule(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    name: row.name,
+    ruleType: row.ruleType,
+    field: row.field,
+    operator: row.operator,
+    value: row.value,
+    targetFolderId: row.targetFolderId,
+    enabled: row.enabled === 1,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+// 对外：列出当前空间可见的邮件账号，包含全局账号和当前空间专属账号。
+function listMailAccounts() {
+  const db = getDb()
+  const rows = db.prepare(`
+    SELECT
+      id,
+      scope,
+      workspace_id AS workspaceId,
+      email_address AS emailAddress,
+      display_name AS displayName,
+      auth_type AS authType,
+      imap_host AS imapHost,
+      imap_port AS imapPort,
+      imap_secure AS imapSecure,
+      smtp_host AS smtpHost,
+      smtp_port AS smtpPort,
+      smtp_secure AS smtpSecure,
+      username,
+      sync_enabled AS syncEnabled,
+      sync_mode AS syncMode,
+      sync_interval_minutes AS syncIntervalMinutes,
+      last_sync_at AS lastSyncAt,
+      last_error AS lastError,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM mail_accounts
+    WHERE is_deleted = 0
+      AND (
+        scope = 'global'
+        OR workspace_id = ?
+        OR EXISTS (
+          SELECT 1 FROM mail_account_bindings b
+          WHERE b.account_id = mail_accounts.id AND b.workspace_id = ?
+        )
+      )
+    ORDER BY scope ASC, updated_at DESC
+  `).all(WORKSPACE_ID, WORKSPACE_ID)
+  return rows.map((row) => hydrateMailAccount(row))
+}
+
+// 对外：读取账号完整配置，主进程邮件服务会使用 credentialRef 去系统安全存储取密码。
+function getMailAccountInternal(accountId) {
+  const db = getDb()
+  const row = db.prepare(`
+    SELECT
+      id,
+      scope,
+      workspace_id AS workspaceId,
+      email_address AS emailAddress,
+      display_name AS displayName,
+      auth_type AS authType,
+      imap_host AS imapHost,
+      imap_port AS imapPort,
+      imap_secure AS imapSecure,
+      smtp_host AS smtpHost,
+      smtp_port AS smtpPort,
+      smtp_secure AS smtpSecure,
+      username,
+      credential_ref AS credentialRef,
+      sync_enabled AS syncEnabled,
+      sync_mode AS syncMode,
+      sync_interval_minutes AS syncIntervalMinutes,
+      last_sync_at AS lastSyncAt,
+      last_error AS lastError,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM mail_accounts
+    WHERE id = ? AND is_deleted = 0
+    LIMIT 1
+  `).get(accountId)
+  return row || null
+}
+
+// 对外：创建或更新邮件账号配置，密码本身由 mail.cjs 存入安全存储。
+function saveMailAccount(input) {
+  const db = getDb()
+  const now = new Date().toISOString()
+  const id = input.id || buildEntityId("mail_account")
+  const scope = input.scope === "space" ? "space" : "global"
+  const workspaceId = scope === "space" ? WORKSPACE_ID : null
+
+  db.prepare(`
+    INSERT INTO mail_accounts (
+      id, scope, workspace_id, email_address, display_name, auth_type,
+      imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure,
+      username, credential_ref, sync_enabled, sync_mode, sync_interval_minutes, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      scope = excluded.scope,
+      workspace_id = excluded.workspace_id,
+      email_address = excluded.email_address,
+      display_name = excluded.display_name,
+      auth_type = excluded.auth_type,
+      imap_host = excluded.imap_host,
+      imap_port = excluded.imap_port,
+      imap_secure = excluded.imap_secure,
+      smtp_host = excluded.smtp_host,
+      smtp_port = excluded.smtp_port,
+      smtp_secure = excluded.smtp_secure,
+      username = excluded.username,
+      credential_ref = COALESCE(excluded.credential_ref, mail_accounts.credential_ref),
+      sync_enabled = excluded.sync_enabled,
+      sync_mode = excluded.sync_mode,
+      sync_interval_minutes = excluded.sync_interval_minutes,
+      updated_at = excluded.updated_at
+  `).run(
+    id,
+    scope,
+    workspaceId,
+    String(input.emailAddress || "").trim(),
+    input.displayName || null,
+    input.authType === "oauth2" ? "oauth2" : "password",
+    String(input.imapHost || "").trim(),
+    Number(input.imapPort || 993),
+    input.imapSecure === false ? 0 : 1,
+    String(input.smtpHost || "").trim(),
+    Number(input.smtpPort || 465),
+    input.smtpSecure === false ? 0 : 1,
+    String(input.username || input.emailAddress || "").trim(),
+    input.credentialRef || null,
+    input.syncEnabled === false ? 0 : 1,
+    ["manual", "interval", "realtime"].includes(input.syncMode) ? input.syncMode : "manual",
+    Math.max(1, Number(input.syncIntervalMinutes || 15)),
+    now,
+    now,
+  )
+
+  if (scope === "global") {
+    db.prepare(`
+      INSERT OR IGNORE INTO mail_account_bindings (account_id, workspace_id)
+      VALUES (?, ?)
+    `).run(id, WORKSPACE_ID)
+  }
+
+  return listMailAccounts().find((account) => account.id === id) || null
+}
+
+// 对外：软删除账号，保留离线缓存以便后续做恢复或审计。
+function deleteMailAccount(accountId) {
+  const db = getDb()
+  const now = new Date().toISOString()
+  db.prepare(`
+    UPDATE mail_accounts
+    SET is_deleted = 1, updated_at = ?
+    WHERE id = ?
+  `).run(now, accountId)
+  return true
+}
+
+// 对外：更新账号同步结果，用于展示最近错误和最后同步时间。
+function updateMailAccountSyncState(accountId, input) {
+  const db = getDb()
+  const now = new Date().toISOString()
+  db.prepare(`
+    UPDATE mail_accounts
+    SET last_sync_at = ?, last_error = ?, updated_at = ?
+    WHERE id = ?
+  `).run(input.lastSyncAt || now, input.lastError || null, now, accountId)
+  return true
+}
+
+// 对外：批量写入文件夹，IMAP 同步发现文件夹后会调用这里。
+function upsertMailFolders(accountId, folders) {
+  const db = getDb()
+  const now = new Date().toISOString()
+  const stmt = db.prepare(`
+    INSERT INTO mail_folders (
+      id, account_id, path, name, role, delimiter, uid_validity, uid_next,
+      highest_modseq, sort_order, is_remote, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_id, path) DO UPDATE SET
+      name = excluded.name,
+      role = excluded.role,
+      delimiter = excluded.delimiter,
+      uid_validity = excluded.uid_validity,
+      uid_next = excluded.uid_next,
+      highest_modseq = excluded.highest_modseq,
+      sort_order = excluded.sort_order,
+      is_remote = excluded.is_remote,
+      updated_at = excluded.updated_at
+  `)
+  const txn = db.transaction(() => {
+    const remotePaths = new Set((folders || []).filter((folder) => folder.isRemote !== false).map((folder) => String(folder.path || folder.name || "INBOX")))
+
+    // 每次远端文件夹同步前先把旧目录降级为本地目录，随后 IMAP 返回的真实目录再标回远端。
+    db.prepare(`
+      UPDATE mail_folders
+      SET is_remote = 0, updated_at = ?
+      WHERE account_id = ?
+    `).run(now, accountId)
+
+    for (const [index, folder] of (folders || []).entries()) {
+      const folderPath = String(folder.path || folder.name || "INBOX")
+      stmt.run(
+        buildMailFolderId(accountId, folderPath),
+        accountId,
+        folderPath,
+        String(folder.name || folderPath),
+        normalizeMailFolderRole(folder),
+        folder.delimiter || null,
+        folder.uidValidity ? String(folder.uidValidity) : null,
+        Number.isFinite(Number(folder.uidNext)) ? Number(folder.uidNext) : null,
+        folder.highestModseq ? String(folder.highestModseq) : null,
+        Number.isFinite(Number(folder.sortOrder)) ? Number(folder.sortOrder) : index,
+        folder.isRemote === false ? 0 : 1,
+        now,
+        now,
+      )
+    }
+
+    // 已存在的默认占位目录如果远端没有返回，保持本地占位，避免同步不存在路径。
+    for (const placeholderPath of ["Drafts", "Sent", "Trash", "Archive", "Junk"]) {
+      if (remotePaths.has(placeholderPath)) continue
+      db.prepare(`
+        UPDATE mail_folders
+        SET is_remote = 0, updated_at = ?
+        WHERE account_id = ? AND path = ? AND total_count = 0
+      `).run(now, accountId, placeholderPath)
+    }
+  })
+  txn()
+  return listMailFolders(accountId)
+}
+
+// 对外：列出账号下的文件夹，并按标准目录优先展示。
+function listMailFolders(accountId) {
+  const db = getDb()
+  const rows = db.prepare(`
+    SELECT
+      id,
+      account_id AS accountId,
+      path,
+      name,
+      role,
+      delimiter,
+      uid_validity AS uidValidity,
+      uid_next AS uidNext,
+      highest_modseq AS highestModseq,
+      total_count AS totalCount,
+      unread_count AS unreadCount,
+      sort_order AS sortOrder,
+      is_remote AS isRemote,
+      updated_at AS updatedAt
+    FROM mail_folders
+    WHERE account_id = ?
+    ORDER BY
+      CASE role
+        WHEN 'inbox' THEN 0
+        WHEN 'drafts' THEN 1
+        WHEN 'sent' THEN 2
+        WHEN 'archive' THEN 3
+        WHEN 'trash' THEN 4
+        WHEN 'junk' THEN 5
+        ELSE 6
+      END,
+      sort_order ASC,
+      name COLLATE NOCASE ASC
+  `).all(accountId)
+  return dedupeStandardMailFolders(rows.map((row) => hydrateMailFolder(row)))
+}
+
+// 对外：创建或更新自定义文件夹，本地先落库，mail.cjs 再负责同步 IMAP。
+function saveMailFolder(input) {
+  const db = getDb()
+  const now = new Date().toISOString()
+  const folderPath = String(input.path || input.name || "").trim()
+  if (!folderPath) throw new Error("文件夹名称不能为空")
+  const id = input.id || buildMailFolderId(input.accountId, folderPath)
+
+  db.prepare(`
+    INSERT INTO mail_folders (
+      id, account_id, path, name, role, delimiter, sort_order, is_remote, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, 'custom', ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      path = excluded.path,
+      name = excluded.name,
+      delimiter = excluded.delimiter,
+      is_remote = excluded.is_remote,
+      updated_at = excluded.updated_at
+  `).run(
+    id,
+    input.accountId,
+    folderPath,
+    String(input.name || folderPath).trim(),
+    input.delimiter || "/",
+    Number.isFinite(Number(input.sortOrder)) ? Number(input.sortOrder) : 100,
+    input.isRemote === false ? 0 : 1,
+    now,
+    now,
+  )
+  return getMailFolder(id)
+}
+
+// 对外：重命名自定义文件夹，标准目录不允许改名。
+function renameMailFolder(input) {
+  const folder = getMailFolder(input.folderId)
+  if (!folder) throw new Error("文件夹不存在")
+  if (folder.role !== "custom") throw new Error("系统文件夹不支持重命名")
+
+  const nextName = String(input.name || "").trim()
+  if (!nextName) throw new Error("文件夹名称不能为空")
+  getDb().prepare(`
+    UPDATE mail_folders
+    SET path = ?, name = ?, updated_at = ?
+    WHERE id = ?
+  `).run(input.path || nextName, nextName, new Date().toISOString(), input.folderId)
+  return getMailFolder(input.folderId)
+}
+
+// 对外：删除自定义文件夹前把邮件回收到收件箱，避免本地邮件悬空。
+function deleteMailFolderToInbox(folderId) {
+  const db = getDb()
+  const folder = getMailFolder(folderId)
+  if (!folder) throw new Error("文件夹不存在")
+  if (folder.role !== "custom") throw new Error("系统文件夹不支持删除")
+  const inbox = listMailFolders(folder.accountId).find((item) => item.role === "inbox")
+  if (!inbox) throw new Error("缺少收件箱，无法回收邮件")
+
+  const now = new Date().toISOString()
+  const txn = db.transaction(() => {
+    db.prepare(`
+      UPDATE mail_messages
+      SET folder_id = ?, pending_action = 'move', sync_status = 'pending', updated_at = ?
+      WHERE folder_id = ?
+    `).run(inbox.id, now, folder.id)
+    db.prepare(`
+      UPDATE mail_rules
+      SET enabled = 0, updated_at = ?
+      WHERE target_folder_id = ?
+    `).run(now, folder.id)
+    db.prepare("DELETE FROM mail_folders WHERE id = ?").run(folder.id)
+  })
+  txn()
+  refreshMailFolderCounts(inbox.id)
+  return { ok: true, inboxFolderId: inbox.id }
+}
+
+// 标准目录去重：同步后如果远端目录和默认占位目录同时存在，侧边栏只展示一个。
+function dedupeStandardMailFolders(folders) {
+  const defaultPaths = new Set(["INBOX", "Drafts", "Sent", "Trash", "Archive", "Junk"])
+  const byRole = new Map()
+  const results = []
+
+  for (const folder of folders) {
+    if (!folder || folder.role === "custom") {
+      results.push(folder)
+      continue
+    }
+
+    const current = byRole.get(folder.role)
+    if (!current) {
+      byRole.set(folder.role, folder)
+      continue
+    }
+
+    const currentIsDefault = defaultPaths.has(current.path)
+    const nextIsDefault = defaultPaths.has(folder.path)
+    const currentScore = (current.isRemote ? 8 : 0) + (current.totalCount > 0 ? 4 : 0) + (!currentIsDefault ? 2 : 0) + (current.unreadCount > 0 ? 1 : 0)
+    const nextScore = (folder.isRemote ? 8 : 0) + (folder.totalCount > 0 ? 4 : 0) + (!nextIsDefault ? 2 : 0) + (folder.unreadCount > 0 ? 1 : 0)
+    byRole.set(folder.role, nextScore > currentScore ? folder : current)
+  }
+
+  return [...byRole.values(), ...results].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "zh-Hans-CN"))
+}
+
+// 对外：侧边栏一次性读取账号树，减少渲染层来回 IPC。
+function listMailTree() {
+  return listMailAccounts().map((account) => ({
+    ...account,
+    folders: listMailFolders(account.id),
+  }))
+}
+
+// 更新文件夹计数：列表写入和已读状态变化后保持侧边栏数字准确。
+function refreshMailFolderCounts(folderId) {
+  const db = getDb()
+  const counts = db.prepare(`
+    SELECT
+      COUNT(*) AS totalCount,
+      SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) AS unreadCount
+    FROM mail_messages
+    WHERE folder_id = ?
+  `).get(folderId)
+  db.prepare(`
+    UPDATE mail_folders
+    SET total_count = ?, unread_count = ?, updated_at = ?
+    WHERE id = ?
+  `).run(counts?.totalCount || 0, counts?.unreadCount || 0, new Date().toISOString(), folderId)
+}
+
+// 对外：读取文件夹已缓存的最大 UID，用于下次只同步新增邮件。
+function getMailFolderMaxUid(folderId) {
+  const row = getDb().prepare(`
+    SELECT MAX(CAST(message_uid AS INTEGER)) AS maxUid
+    FROM mail_messages
+    WHERE folder_id = ? AND message_uid IS NOT NULL
+  `).get(folderId)
+  return Number(row?.maxUid || 0)
+}
+
+// 对外：通过文件夹和 UID 找到本地邮件，用于同步远端 flags。
+function findMailMessageByUid(folderId, messageUid) {
+  const row = getDb().prepare(`
+    SELECT id
+    FROM mail_messages
+    WHERE folder_id = ? AND message_uid = ?
+    LIMIT 1
+  `).get(folderId, String(messageUid))
+  return row || null
+}
+
+// 对外：只更新 flags 派生状态，避免刷新远端已读时覆盖正文和其他 metadata。
+function updateMailMessageFlags(messageId, flags) {
+  const flagList = Array.isArray(flags) ? flags : []
+  const isRead = flagList.some((flag) => String(flag).toLowerCase() === "\\seen")
+  const isStarred = flagList.some((flag) => String(flag).toLowerCase() === "\\flagged")
+  const current = getMailMessage(messageId)
+  if (!current) return null
+
+  getDb().prepare(`
+    UPDATE mail_messages
+    SET flags_json = ?, is_read = ?, is_starred = ?, sync_status = 'synced', pending_action = NULL, updated_at = ?
+    WHERE id = ?
+  `).run(stringifyArray(flagList), isRead ? 1 : 0, isStarred ? 1 : 0, new Date().toISOString(), messageId)
+  refreshMailFolderCounts(current.folderId)
+  return getMailMessage(messageId)
+}
+
+// 对外：把远端状态同步结果写回本地，成功后清理待同步标记。
+function updateMailMessageSyncResult(messageId, input = {}) {
+  const db = getDb()
+  const now = new Date().toISOString()
+  db.prepare(`
+    UPDATE mail_messages
+    SET sync_status = ?, pending_action = ?, last_error = ?, updated_at = ?
+    WHERE id = ?
+  `).run(
+    input.ok === false ? "error" : "synced",
+    input.ok === false ? input.pendingAction || null : null,
+    input.ok === false ? input.lastError || null : null,
+    now,
+    messageId,
+  )
+  return getMailMessage(messageId)
+}
+
+// 对外：写入或更新一封远端邮件的索引信息。
+function upsertMailMessage(input) {
+  const db = getDb()
+  const now = new Date().toISOString()
+  const id = input.id || buildMailMessageId(input.accountId, input.folderId, input.messageUid, input.messageId)
+  const flags = Array.isArray(input.flags) ? input.flags : []
+  const isRead = input.isRead ?? flags.some((flag) => String(flag).toLowerCase() === "\\seen")
+  const isStarred = input.isStarred ?? flags.some((flag) => String(flag).toLowerCase() === "\\flagged")
+
+  db.prepare(`
+    INSERT INTO mail_messages (
+      id, account_id, folder_id, message_uid, message_id, subject,
+      from_json, to_json, cc_json, bcc_json, reply_to_json,
+      sent_at, received_at, snippet, flags_json, is_read, is_starred,
+      has_attachments, size, body_cache_path, raw_cache_path, pending_action,
+      sync_status, last_error, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      folder_id = excluded.folder_id,
+      message_uid = excluded.message_uid,
+      message_id = excluded.message_id,
+      subject = excluded.subject,
+      from_json = excluded.from_json,
+      to_json = excluded.to_json,
+      cc_json = excluded.cc_json,
+      bcc_json = excluded.bcc_json,
+      reply_to_json = excluded.reply_to_json,
+      sent_at = excluded.sent_at,
+      received_at = excluded.received_at,
+      snippet = excluded.snippet,
+      flags_json = excluded.flags_json,
+      is_read = excluded.is_read,
+      is_starred = excluded.is_starred,
+      has_attachments = excluded.has_attachments,
+      size = excluded.size,
+      body_cache_path = COALESCE(excluded.body_cache_path, mail_messages.body_cache_path),
+      raw_cache_path = COALESCE(excluded.raw_cache_path, mail_messages.raw_cache_path),
+      pending_action = excluded.pending_action,
+      sync_status = excluded.sync_status,
+      last_error = excluded.last_error,
+      updated_at = excluded.updated_at
+  `).run(
+    id,
+    input.accountId,
+    input.folderId,
+    input.messageUid ? String(input.messageUid) : null,
+    input.messageId || null,
+    input.subject || "(无主题)",
+    stringifyArray(input.from),
+    stringifyArray(input.to),
+    stringifyArray(input.cc),
+    stringifyArray(input.bcc),
+    stringifyArray(input.replyTo),
+    input.sentAt || null,
+    input.receivedAt || input.sentAt || now,
+    input.snippet || null,
+    stringifyArray(flags),
+    isRead ? 1 : 0,
+    isStarred ? 1 : 0,
+    input.hasAttachments ? 1 : 0,
+    Number(input.size || 0),
+    input.bodyCachePath || null,
+    input.rawCachePath || null,
+    input.pendingAction || null,
+    input.syncStatus || "synced",
+    input.lastError || null,
+    now,
+    now,
+  )
+
+  refreshMailFolderCounts(input.folderId)
+  return getMailMessage(id)
+}
+
+// 对外：保存邮件正文缓存，正文小而常用，直接进 SQLite 提升离线读取速度。
+function saveMailBody(input) {
+  const db = getDb()
+  const now = new Date().toISOString()
+  const contentHash = sha256(`${input.textBody || ""}\n${input.htmlBody || ""}`)
+  db.prepare(`
+    INSERT INTO mail_bodies (message_id, text_body, html_body, content_hash, downloaded_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(message_id) DO UPDATE SET
+      text_body = excluded.text_body,
+      html_body = excluded.html_body,
+      content_hash = excluded.content_hash,
+      downloaded_at = excluded.downloaded_at
+  `).run(input.messageId, input.textBody || null, input.htmlBody || null, contentHash, now)
+  return true
+}
+
+// 对外：替换邮件附件清单，文件本体由 mail.cjs 放到 mail-cache 目录。
+function saveMailAttachments(messageId, attachments) {
+  const db = getDb()
+  const now = new Date().toISOString()
+  const txn = db.transaction(() => {
+    db.prepare("DELETE FROM mail_attachments WHERE message_id = ?").run(messageId)
+    const stmt = db.prepare(`
+      INSERT INTO mail_attachments (
+        id, message_id, filename, content_type, size, content_id, cache_path, downloaded_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    for (const attachment of attachments || []) {
+      stmt.run(
+        attachment.id || buildEntityId("mail_att"),
+        messageId,
+        attachment.filename || "attachment",
+        attachment.contentType || null,
+        Number(attachment.size || 0),
+        attachment.contentId || null,
+        attachment.cachePath || null,
+        attachment.downloadedAt || null,
+        now,
+      )
+    }
+  })
+  txn()
+  return true
+}
+
+// 对外：读取文件夹下的邮件列表，默认按收信时间倒序。
+function listMailMessages(input) {
+  const db = getDb()
+  const limit = Math.max(1, Math.min(Number(input?.limit || 50), 200))
+  const offset = Math.max(0, Number(input?.offset || 0))
+  const rows = db.prepare(`
+    SELECT
+      id,
+      account_id AS accountId,
+      folder_id AS folderId,
+      message_uid AS messageUid,
+      message_id AS messageId,
+      subject,
+      from_json AS fromJson,
+      to_json AS toJson,
+      cc_json AS ccJson,
+      bcc_json AS bccJson,
+      reply_to_json AS replyToJson,
+      sent_at AS sentAt,
+      received_at AS receivedAt,
+      snippet,
+      flags_json AS flagsJson,
+      is_read AS isRead,
+      is_starred AS isStarred,
+      has_attachments AS hasAttachments,
+      size,
+      body_cache_path AS bodyCachePath,
+      raw_cache_path AS rawCachePath,
+      pending_action AS pendingAction,
+      sync_status AS syncStatus,
+      last_error AS lastError,
+      updated_at AS updatedAt,
+      (
+        SELECT id FROM mail_reminders
+        WHERE mail_reminders.message_id = mail_messages.id AND status = 'pending'
+        ORDER BY remind_at ASC
+        LIMIT 1
+      ) AS reminderId,
+      (
+        SELECT remind_at FROM mail_reminders
+        WHERE mail_reminders.message_id = mail_messages.id AND status = 'pending'
+        ORDER BY remind_at ASC
+        LIMIT 1
+      ) AS remindAt
+    FROM mail_messages
+    WHERE folder_id = ?
+    ORDER BY received_at DESC, updated_at DESC
+    LIMIT ? OFFSET ?
+  `).all(input.folderId, limit, offset)
+  return rows.map((row) => hydrateMailMessage(row))
+}
+
+// 对外：列出待提醒邮件，虚拟“提醒”目录会复用邮件列表组件展示。
+function listMailReminderMessages() {
+  const rows = getDb().prepare(`
+    SELECT
+      mail_messages.id,
+      account_id AS accountId,
+      folder_id AS folderId,
+      message_uid AS messageUid,
+      message_id AS messageId,
+      subject,
+      from_json AS fromJson,
+      to_json AS toJson,
+      cc_json AS ccJson,
+      bcc_json AS bccJson,
+      reply_to_json AS replyToJson,
+      sent_at AS sentAt,
+      received_at AS receivedAt,
+      snippet,
+      flags_json AS flagsJson,
+      is_read AS isRead,
+      is_starred AS isStarred,
+      has_attachments AS hasAttachments,
+      size,
+      body_cache_path AS bodyCachePath,
+      raw_cache_path AS rawCachePath,
+      pending_action AS pendingAction,
+      sync_status AS syncStatus,
+      last_error AS lastError,
+      mail_messages.updated_at AS updatedAt,
+      mail_reminders.id AS reminderId,
+      mail_reminders.remind_at AS remindAt
+    FROM mail_reminders
+    JOIN mail_messages ON mail_messages.id = mail_reminders.message_id
+    WHERE mail_reminders.status = 'pending'
+    ORDER BY mail_reminders.remind_at ASC, mail_messages.received_at DESC
+  `).all()
+  return rows.map((row) => hydrateMailMessage(row))
+}
+
+// 对外：列出规则可处理的历史邮件，排除草稿、已发送、废纸篓和垃圾邮件等系统目录。
+function listMailRuleCandidateMessages(accountId) {
+  const rows = getDb().prepare(`
+    SELECT
+      mail_messages.id,
+      mail_messages.account_id AS accountId,
+      folder_id AS folderId,
+      message_uid AS messageUid,
+      message_id AS messageId,
+      subject,
+      from_json AS fromJson,
+      to_json AS toJson,
+      cc_json AS ccJson,
+      bcc_json AS bccJson,
+      reply_to_json AS replyToJson,
+      sent_at AS sentAt,
+      received_at AS receivedAt,
+      snippet,
+      flags_json AS flagsJson,
+      is_read AS isRead,
+      is_starred AS isStarred,
+      has_attachments AS hasAttachments,
+      size,
+      body_cache_path AS bodyCachePath,
+      raw_cache_path AS rawCachePath,
+      pending_action AS pendingAction,
+      sync_status AS syncStatus,
+      last_error AS lastError,
+      mail_messages.updated_at AS updatedAt
+    FROM mail_messages
+    JOIN mail_folders ON mail_folders.id = mail_messages.folder_id
+    WHERE mail_messages.account_id = ?
+      AND mail_folders.role IN ('inbox', 'archive', 'custom')
+    ORDER BY received_at DESC, mail_messages.updated_at DESC
+  `).all(accountId)
+  return rows.map((row) => hydrateMailMessage(row))
+}
+
+// 对外：读取仍待推送远端的邮件状态，后台队列会定期重试。
+function listPendingMailMessages(limit = 50) {
+  const rows = getDb().prepare(`
+    SELECT id
+    FROM mail_messages
+    WHERE sync_status IN ('pending', 'error') AND pending_action IS NOT NULL
+    ORDER BY updated_at ASC
+    LIMIT ?
+  `).all(Math.max(1, Math.min(Number(limit || 50), 200)))
+  return rows.map((row) => getMailMessage(row.id)).filter(Boolean)
+}
+
+// 对外：读取邮件详情，包含正文和附件。
+function getMailMessage(messageId) {
+  const db = getDb()
+  const row = db.prepare(`
+    SELECT
+      id,
+      account_id AS accountId,
+      folder_id AS folderId,
+      message_uid AS messageUid,
+      message_id AS messageId,
+      subject,
+      from_json AS fromJson,
+      to_json AS toJson,
+      cc_json AS ccJson,
+      bcc_json AS bccJson,
+      reply_to_json AS replyToJson,
+      sent_at AS sentAt,
+      received_at AS receivedAt,
+      snippet,
+      flags_json AS flagsJson,
+      is_read AS isRead,
+      is_starred AS isStarred,
+      has_attachments AS hasAttachments,
+      size,
+      body_cache_path AS bodyCachePath,
+      raw_cache_path AS rawCachePath,
+      pending_action AS pendingAction,
+      sync_status AS syncStatus,
+      last_error AS lastError,
+      updated_at AS updatedAt,
+      (
+        SELECT id FROM mail_reminders
+        WHERE mail_reminders.message_id = mail_messages.id AND status = 'pending'
+        ORDER BY remind_at ASC
+        LIMIT 1
+      ) AS reminderId,
+      (
+        SELECT remind_at FROM mail_reminders
+        WHERE mail_reminders.message_id = mail_messages.id AND status = 'pending'
+        ORDER BY remind_at ASC
+        LIMIT 1
+      ) AS remindAt
+    FROM mail_messages
+    WHERE id = ?
+    LIMIT 1
+  `).get(messageId)
+  const message = hydrateMailMessage(row)
+  if (!message) return null
+
+  const body = db.prepare(`
+    SELECT text_body AS textBody, html_body AS htmlBody, downloaded_at AS downloadedAt
+    FROM mail_bodies
+    WHERE message_id = ?
+    LIMIT 1
+  `).get(messageId) || { textBody: null, htmlBody: null, downloadedAt: null }
+
+  const attachments = db.prepare(`
+    SELECT
+      id,
+      filename,
+      content_type AS contentType,
+      size,
+      content_id AS contentId,
+      cache_path AS cachePath,
+      downloaded_at AS downloadedAt
+    FROM mail_attachments
+    WHERE message_id = ?
+    ORDER BY created_at ASC
+  `).all(messageId)
+
+  return {
+    ...message,
+    body,
+    attachments,
+  }
+}
+
+// 对外：通过 folderId 读取文件夹详情，邮件服务推送远端状态时需要路径。
+function getMailFolder(folderId) {
+  const row = getDb().prepare(`
+    SELECT
+      id,
+      account_id AS accountId,
+      path,
+      name,
+      role,
+      delimiter,
+      uid_validity AS uidValidity,
+      uid_next AS uidNext,
+      highest_modseq AS highestModseq,
+      total_count AS totalCount,
+      unread_count AS unreadCount,
+      sort_order AS sortOrder,
+      is_remote AS isRemote,
+      updated_at AS updatedAt
+    FROM mail_folders
+    WHERE id = ?
+    LIMIT 1
+  `).get(folderId)
+  return hydrateMailFolder(row)
+}
+
+// 对外：更新已读/星标等本地状态，远端同步动作由 mail.cjs 排队处理。
+function updateMailMessageState(input) {
+  const db = getDb()
+  const current = getMailMessage(input.messageId)
+  if (!current) throw new Error("邮件不存在")
+
+  const now = new Date().toISOString()
+  db.prepare(`
+    UPDATE mail_messages
+    SET is_read = ?, is_starred = ?, pending_action = ?, sync_status = 'pending', updated_at = ?
+    WHERE id = ?
+  `).run(
+    typeof input.isRead === "boolean" ? (input.isRead ? 1 : 0) : (current.isRead ? 1 : 0),
+    typeof input.isStarred === "boolean" ? (input.isStarred ? 1 : 0) : (current.isStarred ? 1 : 0),
+    input.pendingAction || "update-flags",
+    now,
+    input.messageId,
+  )
+  refreshMailFolderCounts(current.folderId)
+  return getMailMessage(input.messageId)
+}
+
+// 对外：把某个文件夹全部标记已读；主进程会再尝试批量推送远端 flags。
+function markMailFolderRead(folderId) {
+  const db = getDb()
+  const now = new Date().toISOString()
+  const messageRows = db.prepare(`
+    SELECT id
+    FROM mail_messages
+    WHERE folder_id = ? AND is_read = 0
+  `).all(folderId)
+
+  const txn = db.transaction(() => {
+    for (const row of messageRows) {
+      db.prepare(`
+        UPDATE mail_messages
+        SET is_read = 1, pending_action = 'update-flags', sync_status = 'pending', updated_at = ?
+        WHERE id = ?
+      `).run(now, row.id)
+    }
+  })
+  txn()
+  refreshMailFolderCounts(folderId)
+  return messageRows.length
+}
+
+// 对外：规则自动归档使用的本地移动，不额外改写 pending_action。
+function moveMailMessageLocal(input) {
+  const current = getMailMessage(input.messageId)
+  if (!current) throw new Error("邮件不存在")
+  getDb().prepare(`
+    UPDATE mail_messages
+    SET folder_id = ?, updated_at = ?
+    WHERE id = ?
+  `).run(input.targetFolderId, new Date().toISOString(), input.messageId)
+  refreshMailFolderCounts(current.folderId)
+  refreshMailFolderCounts(input.targetFolderId)
+  return getMailMessage(input.messageId)
+}
+
+// 对外：列出账号可用规则，账号为空代表全局规则。
+function listMailRules(accountId) {
+  const rows = getDb().prepare(`
+    SELECT
+      id,
+      account_id AS accountId,
+      name,
+      rule_type AS ruleType,
+      field,
+      operator,
+      value,
+      target_folder_id AS targetFolderId,
+      enabled,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM mail_rules
+    WHERE (? IS NULL OR account_id IS NULL OR account_id = ?)
+    ORDER BY created_at DESC
+  `).all(accountId || null, accountId || null)
+  return rows.map((row) => hydrateMailRule(row))
+}
+
+// 对外：保存自动归档或屏蔽规则。
+function saveMailRule(input) {
+  const now = new Date().toISOString()
+  const id = input.id || buildEntityId("mail_rule")
+  const value = String(input.value || "").trim()
+  if (!value) throw new Error("规则内容不能为空")
+
+  getDb().prepare(`
+    INSERT INTO mail_rules (
+      id, account_id, name, rule_type, field, operator, value, target_folder_id, enabled, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      account_id = excluded.account_id,
+      name = excluded.name,
+      rule_type = excluded.rule_type,
+      field = excluded.field,
+      operator = excluded.operator,
+      value = excluded.value,
+      target_folder_id = excluded.target_folder_id,
+      enabled = excluded.enabled,
+      updated_at = excluded.updated_at
+  `).run(
+    id,
+    input.accountId || null,
+    input.name || value,
+    input.ruleType === "block" ? "block" : "archive",
+    ["from", "sender_name", "subject"].includes(input.field) ? input.field : "from",
+    input.operator === "equals" ? "equals" : "contains",
+    value,
+    input.targetFolderId || null,
+    input.enabled === false ? 0 : 1,
+    now,
+    now,
+  )
+  return listMailRules(input.accountId || null).find((rule) => rule.id === id) || null
+}
+
+// 对外：删除规则，自动归档和屏蔽发件人都从这里移除。
+function deleteMailRule(ruleId) {
+  getDb().prepare("DELETE FROM mail_rules WHERE id = ?").run(ruleId)
+  return true
+}
+
+// 对外：本地移动邮件，远端同步失败时 UI 仍能保留用户意图。
+function moveMailMessage(input) {
+  const db = getDb()
+  const current = getMailMessage(input.messageId)
+  if (!current) throw new Error("邮件不存在")
+
+  const now = new Date().toISOString()
+  db.prepare(`
+    UPDATE mail_messages
+    SET folder_id = ?, pending_action = 'move', sync_status = 'pending', updated_at = ?
+    WHERE id = ?
+  `).run(input.targetFolderId, now, input.messageId)
+  refreshMailFolderCounts(current.folderId)
+  refreshMailFolderCounts(input.targetFolderId)
+  return getMailMessage(input.messageId)
+}
+
+// 对外：删除本地邮件缓存，并记录删除意图；远端 expunge 可后续由同步队列处理。
+function deleteMailMessage(messageId) {
+  const db = getDb()
+  const current = getMailMessage(messageId)
+  if (!current) return true
+
+  const txn = db.transaction(() => {
+    db.prepare("DELETE FROM mail_attachments WHERE message_id = ?").run(messageId)
+    db.prepare("DELETE FROM mail_bodies WHERE message_id = ?").run(messageId)
+    db.prepare("DELETE FROM mail_messages WHERE id = ?").run(messageId)
+  })
+  txn()
+  refreshMailFolderCounts(current.folderId)
+  return true
+}
+
+// 对外：保存草稿，写信面板关闭或发送前都会复用这一条。
+function saveMailDraft(input) {
+  const db = getDb()
+  const now = new Date().toISOString()
+  const id = input.id || buildEntityId("mail_draft")
+  db.prepare(`
+    INSERT INTO mail_drafts (
+      id, account_id, folder_id, message_id, to_json, cc_json, bcc_json,
+      subject, text_body, html_body, attachments_json, sync_status, last_error,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      account_id = excluded.account_id,
+      folder_id = excluded.folder_id,
+      message_id = excluded.message_id,
+      to_json = excluded.to_json,
+      cc_json = excluded.cc_json,
+      bcc_json = excluded.bcc_json,
+      subject = excluded.subject,
+      text_body = excluded.text_body,
+      html_body = excluded.html_body,
+      attachments_json = excluded.attachments_json,
+      sync_status = excluded.sync_status,
+      last_error = excluded.last_error,
+      updated_at = excluded.updated_at
+  `).run(
+    id,
+    input.accountId,
+    input.folderId || null,
+    input.messageId || null,
+    stringifyArray(input.to),
+    stringifyArray(input.cc),
+    stringifyArray(input.bcc),
+    input.subject || "",
+    input.textBody || "",
+    input.htmlBody || null,
+    stringifyArray(input.attachments),
+    input.syncStatus || "local",
+    input.lastError || null,
+    now,
+    now,
+  )
+  return listMailDrafts(input.accountId).find((draft) => draft.id === id) || null
+}
+
+// 对外：列出草稿，方便草稿箱和写信面板恢复状态。
+function listMailDrafts(accountId) {
+  const db = getDb()
+  const rows = db.prepare(`
+    SELECT
+      id,
+      account_id AS accountId,
+      folder_id AS folderId,
+      message_id AS messageId,
+      to_json AS toJson,
+      cc_json AS ccJson,
+      bcc_json AS bccJson,
+      subject,
+      text_body AS textBody,
+      html_body AS htmlBody,
+      attachments_json AS attachmentsJson,
+      sync_status AS syncStatus,
+      last_error AS lastError,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM mail_drafts
+    WHERE account_id = ?
+    ORDER BY updated_at DESC
+  `).all(accountId)
+  return rows.map((row) => ({
+    id: row.id,
+    accountId: row.accountId,
+    folderId: row.folderId,
+    messageId: row.messageId,
+    to: parseJsonArray(row.toJson),
+    cc: parseJsonArray(row.ccJson),
+    bcc: parseJsonArray(row.bccJson),
+    subject: row.subject,
+    textBody: row.textBody,
+    htmlBody: row.htmlBody,
+    attachments: parseJsonArray(row.attachmentsJson),
+    syncStatus: row.syncStatus,
+    lastError: row.lastError,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }))
+}
+
+// 对外：删除草稿，发送成功后也会调用。
+function deleteMailDraft(draftId) {
+  getDb().prepare("DELETE FROM mail_drafts WHERE id = ?").run(draftId)
+  return true
+}
+
+// 对外：读取当前工作区邮件通知偏好，第一次读取时返回默认开启。
+function getMailNotificationSettings() {
+  const row = getDb().prepare(`
+    SELECT
+      workspace_id AS workspaceId,
+      enabled,
+      inbox_only AS inboxOnly,
+      include_body_preview AS includeBodyPreview,
+      quiet_start AS quietStart,
+      quiet_end AS quietEnd,
+      updated_at AS updatedAt
+    FROM mail_notification_settings
+    WHERE workspace_id = ?
+    LIMIT 1
+  `).get(WORKSPACE_ID)
+
+  if (!row) {
+    return {
+      workspaceId: WORKSPACE_ID,
+      enabled: true,
+      inboxOnly: true,
+      includeBodyPreview: false,
+      quietStart: null,
+      quietEnd: null,
+      updatedAt: null,
+    }
+  }
+
+  return {
+    workspaceId: row.workspaceId,
+    enabled: row.enabled === 1,
+    inboxOnly: row.inboxOnly === 1,
+    includeBodyPreview: row.includeBodyPreview === 1,
+    quietStart: row.quietStart,
+    quietEnd: row.quietEnd,
+    updatedAt: row.updatedAt,
+  }
+}
+
+// 对外：保存当前工作区邮件通知偏好，系统通知和提醒共用这套开关。
+function saveMailNotificationSettings(input = {}) {
+  const current = getMailNotificationSettings()
+  const next = {
+    enabled: input.enabled ?? current.enabled,
+    inboxOnly: input.inboxOnly ?? current.inboxOnly,
+    includeBodyPreview: input.includeBodyPreview ?? current.includeBodyPreview,
+    quietStart: input.quietStart ?? current.quietStart,
+    quietEnd: input.quietEnd ?? current.quietEnd,
+  }
+  const now = new Date().toISOString()
+
+  getDb().prepare(`
+    INSERT INTO mail_notification_settings (
+      workspace_id, enabled, inbox_only, include_body_preview, quiet_start, quiet_end, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(workspace_id) DO UPDATE SET
+      enabled = excluded.enabled,
+      inbox_only = excluded.inbox_only,
+      include_body_preview = excluded.include_body_preview,
+      quiet_start = excluded.quiet_start,
+      quiet_end = excluded.quiet_end,
+      updated_at = excluded.updated_at
+  `).run(
+    WORKSPACE_ID,
+    next.enabled ? 1 : 0,
+    next.inboxOnly ? 1 : 0,
+    next.includeBodyPreview ? 1 : 0,
+    next.quietStart || null,
+    next.quietEnd || null,
+    now,
+  )
+
+  return getMailNotificationSettings()
+}
+
+// 对外：创建邮件提醒，右键“提醒我”会写入这里，由主进程定时器触发系统通知。
+function saveMailReminder(input) {
+  const message = getMailMessage(input.messageId)
+  if (!message) throw new Error("邮件不存在")
+
+  const now = new Date().toISOString()
+  const id = input.id || buildEntityId("mail_reminder")
+  getDb().prepare(`
+    INSERT INTO mail_reminders (id, message_id, remind_at, status, note, created_at, updated_at)
+    VALUES (?, ?, ?, 'pending', ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      message_id = excluded.message_id,
+      remind_at = excluded.remind_at,
+      status = 'pending',
+      note = excluded.note,
+      updated_at = excluded.updated_at
+  `).run(id, input.messageId, input.remindAt, input.note || null, now, now)
+
+  return getMailReminder(id)
+}
+
+// 对外：读取单条提醒，便于保存后给前端展示。
+function getMailReminder(reminderId) {
+  const row = getDb().prepare(`
+    SELECT
+      id,
+      message_id AS messageId,
+      remind_at AS remindAt,
+      status,
+      note,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM mail_reminders
+    WHERE id = ?
+    LIMIT 1
+  `).get(reminderId)
+  return row || null
+}
+
+// 对外：查询指定邮件的待提醒记录，列表可以用它展示“已设置提醒”。
+function getPendingMailReminder(messageId) {
+  const row = getDb().prepare(`
+    SELECT
+      id,
+      message_id AS messageId,
+      remind_at AS remindAt,
+      status,
+      note,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM mail_reminders
+    WHERE message_id = ? AND status = 'pending'
+    ORDER BY remind_at ASC
+    LIMIT 1
+  `).get(messageId)
+  return row || null
+}
+
+// 对外：列出到期提醒，主进程通知定时器一次取一批避免阻塞。
+function listDueMailReminders(nowIso, limit = 20) {
+  const rows = getDb().prepare(`
+    SELECT
+      id,
+      message_id AS messageId,
+      remind_at AS remindAt,
+      status,
+      note,
+      created_at AS createdAt,
+      updated_at AS updatedAt
+    FROM mail_reminders
+    WHERE status = 'pending' AND remind_at <= ?
+    ORDER BY remind_at ASC
+    LIMIT ?
+  `).all(nowIso || new Date().toISOString(), Math.max(1, Math.min(Number(limit || 20), 100)))
+  return rows
+}
+
+// 对外：提醒发出后标记完成，避免重复弹通知。
+function markMailReminderDelivered(reminderId) {
+  getDb().prepare(`
+    UPDATE mail_reminders
+    SET status = 'delivered', updated_at = ?
+    WHERE id = ?
+  `).run(new Date().toISOString(), reminderId)
+  return true
+}
+
+// 对外：同步器更新文件夹级游标和阶段。
+function updateMailSyncState(input) {
+  const db = getDb()
+  const now = new Date().toISOString()
+  db.prepare(`
+    INSERT INTO mail_sync_state (
+      account_id, folder_id, sync_phase, last_synced_uid, last_synced_modseq,
+      last_full_sync_at, last_incremental_sync_at, last_error, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_id, folder_id) DO UPDATE SET
+      sync_phase = excluded.sync_phase,
+      last_synced_uid = excluded.last_synced_uid,
+      last_synced_modseq = excluded.last_synced_modseq,
+      last_full_sync_at = COALESCE(excluded.last_full_sync_at, mail_sync_state.last_full_sync_at),
+      last_incremental_sync_at = COALESCE(excluded.last_incremental_sync_at, mail_sync_state.last_incremental_sync_at),
+      last_error = excluded.last_error,
+      updated_at = excluded.updated_at
+  `).run(
+    input.accountId,
+    input.folderId,
+    input.syncPhase || "idle",
+    input.lastSyncedUid || null,
+    input.lastSyncedModseq || null,
+    input.lastFullSyncAt || null,
+    input.lastIncrementalSyncAt || null,
+    input.lastError || null,
+    now,
+  )
+  return true
+}
+
 module.exports = {
   getHoraDataPath,
   getVaultPath,
   getNotesPath,
   getPluginsRootPath,
+  getMailCachePath,
   resetRuntime,
   syncVaultToDatabase,
   startNotesWatcher,
@@ -2106,6 +3730,48 @@ module.exports = {
   reorderPlugins,
   updatePluginSettings,
   importPluginPackage,
+  listMailAccounts,
+  getMailAccountInternal,
+  saveMailAccount,
+  deleteMailAccount,
+  updateMailAccountSyncState,
+  upsertMailFolders,
+  listMailFolders,
+  saveMailFolder,
+  renameMailFolder,
+  deleteMailFolderToInbox,
+  listMailTree,
+  getMailFolder,
+  getMailFolderMaxUid,
+  findMailMessageByUid,
+  updateMailMessageFlags,
+  updateMailMessageSyncResult,
+  upsertMailMessage,
+  saveMailBody,
+  saveMailAttachments,
+  listMailMessages,
+  listMailReminderMessages,
+  listMailRuleCandidateMessages,
+  listPendingMailMessages,
+  getMailMessage,
+  updateMailMessageState,
+  markMailFolderRead,
+  moveMailMessageLocal,
+  moveMailMessage,
+  deleteMailMessage,
+  listMailRules,
+  saveMailRule,
+  deleteMailRule,
+  saveMailDraft,
+  listMailDrafts,
+  deleteMailDraft,
+  getMailNotificationSettings,
+  saveMailNotificationSettings,
+  saveMailReminder,
+  getPendingMailReminder,
+  listDueMailReminders,
+  markMailReminderDelivered,
+  updateMailSyncState,
   listNotesByProject,
   listNotesByRequirement,
   listNotesByTask,

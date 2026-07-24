@@ -158,6 +158,178 @@ type UpdateSnapshot = {
   status: UpdateStatus
 }
 
+type MailAddress = {
+  name: string
+  address: string
+}
+
+type MailFolderRole = "inbox" | "sent" | "drafts" | "trash" | "archive" | "junk" | "custom"
+
+type MailAccountRecord = {
+  id: string
+  scope: "global" | "space"
+  workspaceId: string | null
+  emailAddress: string
+  displayName: string | null
+  authType: "password" | "oauth2"
+  imapHost: string
+  imapPort: number
+  imapSecure: boolean
+  smtpHost: string
+  smtpPort: number
+  smtpSecure: boolean
+  username: string
+  syncEnabled: boolean
+  syncMode: "manual" | "interval" | "realtime"
+  syncIntervalMinutes: number
+  lastSyncAt: string | null
+  lastError: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+type MailFolderRecord = {
+  id: string
+  accountId: string
+  path: string
+  name: string
+  role: MailFolderRole
+  delimiter: string | null
+  uidValidity: string | null
+  uidNext: number | null
+  highestModseq: string | null
+  totalCount: number
+  unreadCount: number
+  sortOrder: number
+  isRemote: boolean
+  updatedAt: string
+}
+
+type MailTreeAccount = MailAccountRecord & {
+  folders: MailFolderRecord[]
+}
+
+type MailAttachmentRecord = {
+  id: string
+  filename: string
+  contentType: string | null
+  size: number
+  contentId: string | null
+  cachePath: string | null
+  downloadedAt: string | null
+}
+
+type MailMessageRecord = {
+  id: string
+  accountId: string
+  folderId: string
+  messageUid: string | null
+  messageId: string | null
+  subject: string | null
+  from: MailAddress[]
+  to: MailAddress[]
+  cc: MailAddress[]
+  bcc: MailAddress[]
+  replyTo: MailAddress[]
+  sentAt: string | null
+  receivedAt: string | null
+  snippet: string | null
+  flags: string[]
+  isRead: boolean
+  isStarred: boolean
+  hasAttachments: boolean
+  size: number
+  bodyCachePath: string | null
+  rawCachePath: string | null
+  pendingAction: string | null
+  syncStatus: "synced" | "pending" | "error"
+  lastError: string | null
+  updatedAt: string
+  reminderId?: string | null
+  remindAt?: string | null
+}
+
+type MailMessageDetail = MailMessageRecord & {
+  body: {
+    textBody: string | null
+    htmlBody: string | null
+    downloadedAt: string | null
+  }
+  attachments: MailAttachmentRecord[]
+}
+
+type MailDraftRecord = {
+  id: string
+  accountId: string
+  folderId: string | null
+  messageId: string | null
+  to: MailAddress[]
+  cc: MailAddress[]
+  bcc: MailAddress[]
+  subject: string | null
+  textBody: string | null
+  htmlBody: string | null
+  attachments: unknown[]
+  syncStatus: "local" | "pending" | "synced" | "error"
+  lastError: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+type MailNotificationSettings = {
+  workspaceId: string
+  enabled: boolean
+  inboxOnly: boolean
+  includeBodyPreview: boolean
+  quietStart: string | null
+  quietEnd: string | null
+  updatedAt: string | null
+}
+
+type MailReminderRecord = {
+  id: string
+  messageId: string
+  remindAt: string
+  status: "pending" | "delivered" | "cancelled"
+  note: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+type MailRuleRecord = {
+  id: string
+  accountId: string | null
+  name: string
+  ruleType: "archive" | "block"
+  field: "from" | "sender_name" | "subject"
+  operator: "contains" | "equals"
+  value: string
+  targetFolderId: string | null
+  enabled: boolean
+  appliedCount?: number
+  createdAt: string
+  updatedAt: string
+}
+
+type MailAccountInput = {
+  id?: string
+  scope: "global" | "space"
+  emailAddress: string
+  displayName?: string | null
+  authType?: "password" | "oauth2"
+  imapHost: string
+  imapPort: number
+  imapSecure: boolean
+  smtpHost: string
+  smtpPort: number
+  smtpSecure: boolean
+  username: string
+  password?: string
+  syncEnabled?: boolean
+  syncMode?: "manual" | "interval" | "realtime"
+  syncIntervalMinutes?: number
+}
+
 type HoraDBBridge = {
   listProjects: () => Promise<ProjectRecord[]>
   createProject: (input: Partial<ProjectRecord> & { title: string }) => Promise<ProjectRecord | null>
@@ -255,6 +427,75 @@ type HoraDBBridge = {
   checkForUpdates: () => Promise<UpdateStatus>
   openReleasePage: (releaseUrl?: string) => Promise<boolean>
   onUpdateStatusChanged: (callback: (status: UpdateStatus) => void) => (() => void) | undefined
+  listMailAccounts: () => Promise<MailAccountRecord[]>
+  saveMailAccount: (input: MailAccountInput) => Promise<MailAccountRecord | null>
+  testMailAccount: (input: MailAccountInput) => Promise<{ ok: boolean; error: string | null }>
+  deleteMailAccount: (accountId: string) => Promise<boolean>
+  syncMailAccount: (accountId: string) => Promise<{ ok: boolean; folders: number; messages: number; error: string | null }>
+  listMailTree: () => Promise<MailTreeAccount[]>
+  listMailFolders: (accountId: string) => Promise<MailFolderRecord[]>
+  createMailFolder: (input: { accountId: string; name: string }) => Promise<MailFolderRecord | null>
+  renameMailFolder: (input: { folderId: string; name: string }) => Promise<MailFolderRecord | null>
+  deleteMailFolder: (input: { folderId: string }) => Promise<{ ok: boolean; inboxFolderId: string }>
+  listMailMessages: (input: { folderId: string; limit?: number; offset?: number }) => Promise<MailMessageRecord[]>
+  listMailReminderMessages: () => Promise<MailMessageRecord[]>
+  getMailMessage: (messageId: string) => Promise<MailMessageDetail | null>
+  updateMailMessageState: (input: {
+    messageId: string
+    isRead?: boolean
+    isStarred?: boolean
+    pendingAction?: string
+  }) => Promise<MailMessageDetail | null>
+  moveMailMessage: (input: { messageId: string; targetFolderId: string }) => Promise<MailMessageDetail | null>
+  deleteMailMessage: (messageId: string) => Promise<boolean>
+  markMailFolderRead: (folderId: string) => Promise<{ ok: boolean; changedCount: number; error?: string | null }>
+  saveMailReminder: (input: { messageId: string; remindAt: string; note?: string | null }) => Promise<MailReminderRecord | null>
+  listMailRules: (accountId?: string | null) => Promise<MailRuleRecord[]>
+  saveMailRule: (input: {
+    id?: string
+    accountId?: string | null
+    name?: string
+    ruleType: "archive" | "block"
+    field: "from" | "sender_name" | "subject"
+    operator?: "contains" | "equals"
+    value: string
+    targetFolderId?: string | null
+    enabled?: boolean
+    applyExisting?: boolean
+  }) => Promise<MailRuleRecord | null>
+  deleteMailRule: (ruleId: string) => Promise<boolean>
+  blockMailSender: (input: { messageId: string }) => Promise<MailRuleRecord | null>
+  getMailNotificationSettings: () => Promise<MailNotificationSettings>
+  saveMailNotificationSettings: (input: Partial<Omit<MailNotificationSettings, "workspaceId" | "updatedAt">>) => Promise<MailNotificationSettings>
+  onMailMessageOpen: (callback: (payload: { href: string; messageId: string }) => void) => (() => void) | undefined
+  listMailDrafts: (accountId: string) => Promise<MailDraftRecord[]>
+  saveMailDraft: (input: {
+    id?: string
+    accountId: string
+    folderId?: string | null
+    messageId?: string | null
+    to?: MailAddress[]
+    cc?: MailAddress[]
+    bcc?: MailAddress[]
+    subject?: string
+    textBody?: string
+    htmlBody?: string | null
+    attachments?: unknown[]
+    syncStatus?: "local" | "pending" | "synced" | "error"
+    lastError?: string | null
+  }) => Promise<MailDraftRecord | null>
+  deleteMailDraft: (draftId: string) => Promise<boolean>
+  sendMail: (input: {
+    accountId: string
+    draftId?: string
+    to: string[]
+    cc?: string[]
+    bcc?: string[]
+    subject?: string
+    textBody?: string
+    htmlBody?: string
+    attachments?: unknown[]
+  }) => Promise<{ ok: boolean; messageId: string | null }>
   getSpaceBootstrapState: () => Promise<{
     currentSpace: SpaceRecord | null
     spaces: SpaceRecord[]

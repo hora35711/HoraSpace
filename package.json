@@ -103,6 +103,7 @@
       "electron/main.cjs",
       "electron/preload.cjs",
       "electron/db.cjs",
+      "electron/mail.cjs",
       "electron/space.cjs",
       "electron/updater.cjs",
       "electron/resources/**/*",

@@ -58,6 +58,43 @@ contextBridge.exposeInMainWorld("horaDB", {
     }
   },
 
+  // 邮件服务：渲染层只拿到受控 API，账号密码不会暴露给页面代码之外的 Node 能力。
+  listMailAccounts: () => ipcRenderer.invoke("mail:accounts:list"),
+  saveMailAccount: (input) => ipcRenderer.invoke("mail:accounts:save", input),
+  testMailAccount: (input) => ipcRenderer.invoke("mail:accounts:test", input),
+  deleteMailAccount: (accountId) => ipcRenderer.invoke("mail:accounts:delete", accountId),
+  syncMailAccount: (accountId) => ipcRenderer.invoke("mail:accounts:sync", accountId),
+  listMailTree: () => ipcRenderer.invoke("mail:tree:list"),
+  listMailFolders: (accountId) => ipcRenderer.invoke("mail:folders:list", accountId),
+  createMailFolder: (input) => ipcRenderer.invoke("mail:folders:create", input),
+  renameMailFolder: (input) => ipcRenderer.invoke("mail:folders:rename", input),
+  deleteMailFolder: (input) => ipcRenderer.invoke("mail:folders:delete", input),
+  listMailMessages: (input) => ipcRenderer.invoke("mail:messages:list", input),
+  listMailReminderMessages: () => ipcRenderer.invoke("mail:messages:listReminders"),
+  getMailMessage: (messageId) => ipcRenderer.invoke("mail:messages:get", messageId),
+  updateMailMessageState: (input) => ipcRenderer.invoke("mail:messages:updateState", input),
+  moveMailMessage: (input) => ipcRenderer.invoke("mail:messages:move", input),
+  deleteMailMessage: (messageId) => ipcRenderer.invoke("mail:messages:delete", messageId),
+  markMailFolderRead: (folderId) => ipcRenderer.invoke("mail:folders:markRead", folderId),
+  saveMailReminder: (input) => ipcRenderer.invoke("mail:reminders:save", input),
+  listMailRules: (accountId) => ipcRenderer.invoke("mail:rules:list", accountId),
+  saveMailRule: (input) => ipcRenderer.invoke("mail:rules:save", input),
+  deleteMailRule: (ruleId) => ipcRenderer.invoke("mail:rules:delete", ruleId),
+  blockMailSender: (input) => ipcRenderer.invoke("mail:rules:blockSender", input),
+  getMailNotificationSettings: () => ipcRenderer.invoke("mail:notifications:get"),
+  saveMailNotificationSettings: (input) => ipcRenderer.invoke("mail:notifications:save", input),
+  onMailMessageOpen: (callback) => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on("mail:open-message", listener)
+    return () => {
+      ipcRenderer.removeListener("mail:open-message", listener)
+    }
+  },
+  listMailDrafts: (accountId) => ipcRenderer.invoke("mail:drafts:list", accountId),
+  saveMailDraft: (input) => ipcRenderer.invoke("mail:drafts:save", input),
+  deleteMailDraft: (draftId) => ipcRenderer.invoke("mail:drafts:delete", draftId),
+  sendMail: (input) => ipcRenderer.invoke("mail:send", input),
+
   // 空间管理：首次引导、切换、重命名和路径迁移都走这里。
   getSpaceBootstrapState: () => ipcRenderer.invoke("db:spaces:bootstrapState"),
   listSpaces: () => ipcRenderer.invoke("db:spaces:list"),

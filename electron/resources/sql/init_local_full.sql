@@ -205,6 +205,221 @@ CREATE TABLE IF NOT EXISTS plugins (
 CREATE INDEX IF NOT EXISTS idx_plugins_enabled_order
 ON plugins(is_installed DESC, enabled DESC, order_index ASC, updated_at DESC);
 
+-- =============================================
+-- 8) 邮件：账号、文件夹、离线正文、附件、草稿和同步状态
+-- =============================================
+CREATE TABLE IF NOT EXISTS mail_accounts (
+  id TEXT PRIMARY KEY,
+  scope TEXT NOT NULL DEFAULT 'global' CHECK (scope IN ('global', 'space')),
+  workspace_id TEXT,
+  email_address TEXT NOT NULL,
+  display_name TEXT,
+  auth_type TEXT NOT NULL DEFAULT 'password' CHECK (auth_type IN ('password', 'oauth2')),
+  imap_host TEXT NOT NULL,
+  imap_port INTEGER NOT NULL DEFAULT 993,
+  imap_secure INTEGER NOT NULL DEFAULT 1,
+  smtp_host TEXT NOT NULL,
+  smtp_port INTEGER NOT NULL DEFAULT 465,
+  smtp_secure INTEGER NOT NULL DEFAULT 1,
+  username TEXT NOT NULL,
+  credential_ref TEXT,
+  sync_enabled INTEGER NOT NULL DEFAULT 1,
+  sync_mode TEXT NOT NULL DEFAULT 'manual' CHECK (sync_mode IN ('manual', 'interval', 'realtime')),
+  sync_interval_minutes INTEGER NOT NULL DEFAULT 15,
+  last_sync_at TEXT,
+  last_error TEXT,
+  is_deleted INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_mail_accounts_scope
+ON mail_accounts(scope, workspace_id, is_deleted, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS mail_account_bindings (
+  account_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (account_id, workspace_id),
+  FOREIGN KEY (account_id) REFERENCES mail_accounts(id)
+);
+
+CREATE TABLE IF NOT EXISTS mail_folders (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'custom'
+    CHECK (role IN ('inbox', 'sent', 'drafts', 'trash', 'archive', 'junk', 'custom')),
+  delimiter TEXT,
+  uid_validity TEXT,
+  uid_next INTEGER,
+  highest_modseq TEXT,
+  total_count INTEGER NOT NULL DEFAULT 0,
+  unread_count INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_remote INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES mail_accounts(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_mail_folders_account_path
+ON mail_folders(account_id, path);
+
+CREATE INDEX IF NOT EXISTS idx_mail_folders_account_role
+ON mail_folders(account_id, role, sort_order);
+
+CREATE TABLE IF NOT EXISTS mail_messages (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  folder_id TEXT NOT NULL,
+  message_uid TEXT,
+  message_id TEXT,
+  subject TEXT,
+  from_json TEXT NOT NULL DEFAULT '[]',
+  to_json TEXT NOT NULL DEFAULT '[]',
+  cc_json TEXT NOT NULL DEFAULT '[]',
+  bcc_json TEXT NOT NULL DEFAULT '[]',
+  reply_to_json TEXT NOT NULL DEFAULT '[]',
+  sent_at TEXT,
+  received_at TEXT,
+  snippet TEXT,
+  flags_json TEXT NOT NULL DEFAULT '[]',
+  is_read INTEGER NOT NULL DEFAULT 0,
+  is_starred INTEGER NOT NULL DEFAULT 0,
+  has_attachments INTEGER NOT NULL DEFAULT 0,
+  size INTEGER NOT NULL DEFAULT 0,
+  body_cache_path TEXT,
+  raw_cache_path TEXT,
+  pending_action TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'synced'
+    CHECK (sync_status IN ('synced', 'pending', 'error')),
+  last_error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES mail_accounts(id),
+  FOREIGN KEY (folder_id) REFERENCES mail_folders(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_mail_messages_account_folder_uid
+ON mail_messages(account_id, folder_id, message_uid)
+WHERE message_uid IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_mail_messages_folder_received
+ON mail_messages(folder_id, received_at DESC, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS mail_bodies (
+  message_id TEXT PRIMARY KEY,
+  text_body TEXT,
+  html_body TEXT,
+  content_hash TEXT,
+  downloaded_at TEXT,
+  FOREIGN KEY (message_id) REFERENCES mail_messages(id)
+);
+
+CREATE TABLE IF NOT EXISTS mail_attachments (
+  id TEXT PRIMARY KEY,
+  message_id TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  content_type TEXT,
+  size INTEGER NOT NULL DEFAULT 0,
+  content_id TEXT,
+  cache_path TEXT,
+  downloaded_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (message_id) REFERENCES mail_messages(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mail_attachments_message
+ON mail_attachments(message_id);
+
+CREATE TABLE IF NOT EXISTS mail_drafts (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  folder_id TEXT,
+  message_id TEXT,
+  to_json TEXT NOT NULL DEFAULT '[]',
+  cc_json TEXT NOT NULL DEFAULT '[]',
+  bcc_json TEXT NOT NULL DEFAULT '[]',
+  subject TEXT,
+  text_body TEXT,
+  html_body TEXT,
+  attachments_json TEXT NOT NULL DEFAULT '[]',
+  remote_uid TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'local'
+    CHECK (sync_status IN ('local', 'pending', 'synced', 'error')),
+  last_error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES mail_accounts(id),
+  FOREIGN KEY (folder_id) REFERENCES mail_folders(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mail_drafts_account_updated
+ON mail_drafts(account_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS mail_sync_state (
+  account_id TEXT NOT NULL,
+  folder_id TEXT NOT NULL,
+  sync_phase TEXT NOT NULL DEFAULT 'idle',
+  last_synced_uid TEXT,
+  last_synced_modseq TEXT,
+  last_full_sync_at TEXT,
+  last_incremental_sync_at TEXT,
+  last_error TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (account_id, folder_id),
+  FOREIGN KEY (account_id) REFERENCES mail_accounts(id),
+  FOREIGN KEY (folder_id) REFERENCES mail_folders(id)
+);
+
+CREATE TABLE IF NOT EXISTS mail_notification_settings (
+  workspace_id TEXT PRIMARY KEY,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  inbox_only INTEGER NOT NULL DEFAULT 1,
+  include_body_preview INTEGER NOT NULL DEFAULT 0,
+  quiet_start TEXT,
+  quiet_end TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS mail_reminders (
+  id TEXT PRIMARY KEY,
+  message_id TEXT NOT NULL,
+  remind_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'cancelled')),
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (message_id) REFERENCES mail_messages(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mail_reminders_due
+ON mail_reminders(status, remind_at);
+
+CREATE TABLE IF NOT EXISTS mail_rules (
+  id TEXT PRIMARY KEY,
+  account_id TEXT,
+  name TEXT NOT NULL,
+  rule_type TEXT NOT NULL DEFAULT 'archive'
+    CHECK (rule_type IN ('archive', 'block')),
+  field TEXT NOT NULL DEFAULT 'from'
+    CHECK (field IN ('from', 'sender_name', 'subject')),
+  operator TEXT NOT NULL DEFAULT 'contains'
+    CHECK (operator IN ('contains', 'equals')),
+  value TEXT NOT NULL,
+  target_folder_id TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (account_id) REFERENCES mail_accounts(id),
+  FOREIGN KEY (target_folder_id) REFERENCES mail_folders(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mail_rules_account_enabled
+ON mail_rules(account_id, enabled, rule_type);
+
 CREATE TABLE IF NOT EXISTS note_project_links (
   note_id TEXT NOT NULL,
   project_id TEXT NOT NULL,

@@ -10,6 +10,7 @@ const updater = require("./updater.cjs")
 let mainWindow = null
 let db = null
 let space = null
+let mail = null
 const DEFAULT_RENDERER_PORT = Number(process.env.HORA_RENDERER_PORT || 3000)
 
 // 生产包日志：安装版没有终端，写文件后才能排查“点击没反应”的真实原因。
@@ -61,6 +62,7 @@ function showPackagedStartupError(title, error) {
 function loadRuntimeModules() {
   db = require("./db.cjs")
   space = require("./space.cjs")
+  mail = require("./mail.cjs")
 }
 
 // 根据运行环境选择真实文件路径，避免把图标路径指向 asar 内部。
@@ -93,17 +95,30 @@ function notifyUpdateStatus(status) {
   }
 }
 
+// 打开邮件详情页：系统通知点击后聚焦窗口并跳转到对应邮件所在文件夹。
+function openMailMessage(message) {
+  const win = mainWindow || BrowserWindow.getAllWindows()[0]
+  if (!win || !message?.accountId || !message?.folderId) return
+
+  const mailUrl = `/mail/${message.accountId}/${message.folderId}?messageId=${message.id}`
+  win.show()
+  win.focus()
+  win.webContents.send("mail:open-message", { href: mailUrl, messageId: message.id })
+}
+
 // 切换空间后重建 DB 和监听器，避免旧路径继续占用。
 function reloadCurrentSpaceRuntime() {
-  if (!db || !space) {
+  if (!db || !space || !mail) {
     throw new Error("运行时模块尚未初始化")
   }
 
+  mail.stopMailScheduler()
   db.resetRuntime()
   db.syncVaultToDatabase()
   db.startNotesWatcher(() => {
     notifyNotesChanged()
   })
+  mail.startMailScheduler()
   notifySpacesChanged()
   notifyNotesChanged()
 }
@@ -217,6 +232,36 @@ function registerDbIpc() {
   ipcMain.handle("updates:setSettings", (_event, input) => updater.setUpdateSettings(input))
   ipcMain.handle("updates:checkNow", () => updater.checkForUpdates("manual"))
   ipcMain.handle("updates:openReleasePage", (_event, releaseUrl) => updater.openReleasePage(releaseUrl))
+
+  // 邮件服务：账号、文件夹、离线列表、正文、草稿和发送都通过主进程执行。
+  ipcMain.handle("mail:accounts:list", () => db.listMailAccounts())
+  ipcMain.handle("mail:accounts:save", (_event, input) => mail.saveMailAccount(input))
+  ipcMain.handle("mail:accounts:test", (_event, input) => mail.testMailAccount(input))
+  ipcMain.handle("mail:accounts:delete", (_event, accountId) => mail.deleteMailAccount(accountId))
+  ipcMain.handle("mail:accounts:sync", (_event, accountId) => mail.syncMailAccount(accountId))
+  ipcMain.handle("mail:tree:list", () => db.listMailTree())
+  ipcMain.handle("mail:folders:list", (_event, accountId) => db.listMailFolders(accountId))
+  ipcMain.handle("mail:folders:create", (_event, input) => mail.createMailFolder(input))
+  ipcMain.handle("mail:folders:rename", (_event, input) => mail.renameMailFolder(input))
+  ipcMain.handle("mail:folders:delete", (_event, input) => mail.deleteMailFolder(input))
+  ipcMain.handle("mail:messages:list", (_event, input) => db.listMailMessages(input))
+  ipcMain.handle("mail:messages:listReminders", () => db.listMailReminderMessages())
+  ipcMain.handle("mail:messages:get", (_event, messageId) => db.getMailMessage(messageId))
+  ipcMain.handle("mail:messages:updateState", (_event, input) => mail.updateMailMessageState(input))
+  ipcMain.handle("mail:messages:move", (_event, input) => mail.moveMailMessage(input))
+  ipcMain.handle("mail:messages:delete", (_event, messageId) => mail.deleteMailMessage(messageId))
+  ipcMain.handle("mail:folders:markRead", (_event, folderId) => mail.markMailFolderRead(folderId))
+  ipcMain.handle("mail:reminders:save", (_event, input) => mail.saveMailReminder(input))
+  ipcMain.handle("mail:rules:list", (_event, accountId) => db.listMailRules(accountId))
+  ipcMain.handle("mail:rules:save", (_event, input) => mail.saveMailRule(input))
+  ipcMain.handle("mail:rules:delete", (_event, ruleId) => db.deleteMailRule(ruleId))
+  ipcMain.handle("mail:rules:blockSender", (_event, input) => mail.blockMailSender(input))
+  ipcMain.handle("mail:notifications:get", () => mail.getMailNotificationSettings())
+  ipcMain.handle("mail:notifications:save", (_event, input) => mail.saveMailNotificationSettings(input))
+  ipcMain.handle("mail:drafts:list", (_event, accountId) => db.listMailDrafts(accountId))
+  ipcMain.handle("mail:drafts:save", (_event, input) => db.saveMailDraft(input))
+  ipcMain.handle("mail:drafts:delete", (_event, draftId) => db.deleteMailDraft(draftId))
+  ipcMain.handle("mail:send", (_event, input) => mail.sendMail(input))
 
   // 空间管理：账号级注册表，和空间数据路径分开存放。
   ipcMain.handle("db:spaces:bootstrapState", () => space.getSpaceBootstrapState())
@@ -488,6 +533,8 @@ app.whenReady().then(async () => {
     db.startNotesWatcher(() => {
       notifyNotesChanged()
     })
+    mail.setNotificationClickHandler(openMailMessage)
+    mail.startMailScheduler()
 
     registerDbIpc()
     updater.scheduleConfiguredUpdateCheck()
@@ -534,6 +581,11 @@ process.on("uncaughtException", (error) => {
 
 process.on("unhandledRejection", (reason) => {
   console.error("[hora] unhandledRejection:", reason)
+})
+
+app.on("before-quit", () => {
+  // 应用退出前关闭 IMAP IDLE 连接和邮件定时器，避免后台连接悬挂。
+  mail?.stopMailScheduler?.()
 })
 
 app.on("window-all-closed", () => {

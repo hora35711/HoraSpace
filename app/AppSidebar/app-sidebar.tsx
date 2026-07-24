@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { usePathname, useRouter } from "next/navigation"
 
 import { sidebarData, loadNotesTree, type NoteTreeNode } from "@/components/sidebar-data"
 import { NavMain } from "@/components/nav-main"
@@ -31,12 +32,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { createSpace, getSpaceBootstrapState, listSpaces, switchSpace, type SpaceRecord } from "@/lib/hora-db"
+import { createSpace, getSpaceBootstrapState, listMailTree, listSpaces, switchSpace, type SpaceRecord } from "@/lib/hora-db"
 import { useT } from "@/lib/app-language"
 
 // 主 Sidebar：导航读取静态配置，Notes 通过 DB + IPC 实时同步。
 export function AppSidebar() {
   const t = useT()
+  const pathname = usePathname()
+  const router = useRouter()
   // NotesTree 数据源：挂载后从 SQLite 加载并响应文件系统变化。
   const [notesTree, setNotesTree] = useState<NoteTreeNode[]>(sidebarData.workspace.notesTree)
   const [spaces, setSpaces] = useState<SpaceRecord[]>([])
@@ -44,6 +47,7 @@ export function AppSidebar() {
   const [spaceDialogOpen, setSpaceDialogOpen] = useState(false)
   const [bootstrapRequired, setBootstrapRequired] = useState(false)
   const [switchingSpaceId, setSwitchingSpaceId] = useState<string | null>(null)
+  const [mailUnreadCount, setMailUnreadCount] = useState(0)
 
   useEffect(() => {
     // 统一刷新方法：启动加载与后续事件都复用。
@@ -61,8 +65,19 @@ export function AppSidebar() {
       setSpaceDialogOpen(spaceState.bootstrapRequired || !spaceState.currentSpace)
     }
 
+    // 汇总邮件未读数：顶部邮件 Tab 用一个总数角标提示。
+    const refreshMailUnreadCount = async () => {
+      const tree = await listMailTree()
+      const unreadCount = tree.reduce(
+        (accountTotal, account) => accountTotal + account.folders.reduce((folderTotal, folder) => folderTotal + folder.unreadCount, 0),
+        0,
+      )
+      setMailUnreadCount(unreadCount)
+    }
+
     void refreshNotes()
     void refreshSpaces()
+    void refreshMailUnreadCount()
 
     // 订阅主进程推送：notes 文件变化后自动刷新树。
     const unsubscribe = window.horaDB?.onNotesChanged?.(() => {
@@ -74,9 +89,17 @@ export function AppSidebar() {
       window.location.reload()
     })
 
+    // 邮件同步或已读状态变化后刷新顶部未读角标。
+    const handleDbUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ scope?: string }>).detail
+      if (detail?.scope === "mail") void refreshMailUnreadCount()
+    }
+    window.addEventListener("hora:db-updated", handleDbUpdated)
+
     return () => {
       unsubscribe?.()
       unsubscribeSpaces?.()
+      window.removeEventListener("hora:db-updated", handleDbUpdated)
     }
   }, [])
 
@@ -94,6 +117,19 @@ export function AppSidebar() {
 
   async function handleCreateSpace(input: { name: string; rootPath: string }) {
     await createSpace(input)
+  }
+
+  function handleModuleChange(value: string) {
+    // 邮件是独立页面：切换到邮件 Tab 时同步打开右侧邮件工作台。
+    if (value === "mail") {
+      router.push("/mail")
+      return
+    }
+
+    // 从邮件页切回工作区时给用户一个明确落点，避免右侧仍停留在邮件页面。
+    if (pathname.startsWith("/mail")) {
+      router.push("/dashboard")
+    }
   }
 
   function handleSpaceDialogChange(nextOpen: boolean) {
@@ -158,13 +194,18 @@ export function AppSidebar() {
 
       <SidebarContent>
         <div className="px-2 py-2">
-          <Tabs defaultValue="workspace" className="w-full">
+          <Tabs value={pathname.startsWith("/mail") ? "mail" : "workspace"} onValueChange={handleModuleChange} className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="workspace" className="flex-1">
                 {t("workspace")}
               </TabsTrigger>
-              <TabsTrigger value="mail" className="flex-1">
+              <TabsTrigger value="mail" className="relative flex-1">
                 {t("mail")}
+                {mailUnreadCount > 0 ? (
+                  <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium leading-none text-primary-foreground">
+                    {mailUnreadCount > 99 ? "99+" : mailUnreadCount}
+                  </span>
+                ) : null}
               </TabsTrigger>
             </TabsList>
 

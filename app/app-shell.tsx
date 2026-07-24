@@ -3,7 +3,7 @@
 // 应用主壳：负责 Sidebar 布局、可拖拽宽度和宽度持久化。
 
 import * as React from "react"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/app/AppSidebar/app-sidebar"
 import { saveProjectsDetailHref } from "@/lib/projects-navigation-state"
@@ -29,6 +29,7 @@ function getHrefWithSearch(pathname: string, search: string) {
 // 主壳组件：左侧可拖拽、右侧自适应。
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
   const previousPathnameRef = React.useRef(pathname)
   const previousHrefRef = React.useRef(pathname)
 
@@ -72,6 +73,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     previousPathnameRef.current = pathname
     previousHrefRef.current = currentHref
   }, [pathname])
+
+  React.useEffect(() => {
+    // 系统通知点击后由主进程发来目标邮件地址，前端负责切换路由。
+    const unsubscribe = window.horaDB?.onMailMessageOpen?.((payload) => {
+      if (payload?.href) router.push(payload.href)
+    })
+    return () => {
+      unsubscribe?.()
+    }
+  }, [router])
 
   React.useEffect(() => {
     // 空间切换、迁移或删除后直接整页刷新，保证右侧页面读取到新的空间数据库和插件目录。
