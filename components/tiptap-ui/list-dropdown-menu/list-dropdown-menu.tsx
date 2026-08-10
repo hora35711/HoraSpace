@@ -17,6 +17,7 @@ import { useListDropdownMenu } from "@/components/tiptap-ui/list-dropdown-menu/u
 // --- UI Primitives ---
 import type { ButtonProps } from "@/components/tiptap-ui-primitive/button"
 import { Button } from "@/components/tiptap-ui-primitive/button"
+import { useT } from "@/lib/app-language"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -58,7 +59,13 @@ export function ListDropdownMenu({
   ...props
 }: ListDropdownMenuProps) {
   const { editor } = useTiptapEditor(providedEditor)
+  const t = useT()
   const [isOpen, setIsOpen] = useState(false)
+  const listLabelMap: Record<ListType, string> = {
+    bulletList: t("editorBulletList"),
+    orderedList: t("editorOrderedList"),
+    taskList: t("editorTaskList"),
+  }
 
   const { filteredLists, canToggle, isActive, isVisible, Icon } =
     useListDropdownMenu({
@@ -90,8 +97,8 @@ export function ListDropdownMenu({
           tabIndex={-1}
           disabled={!canToggle}
           data-disabled={!canToggle}
-          aria-label="List options"
-          tooltip="List"
+          aria-label={t("editorList")}
+          tooltip={t("editorList")}
           {...props}
         >
           <Icon className="tiptap-button-icon" />
@@ -106,7 +113,7 @@ export function ListDropdownMenu({
               <ListButton
                 editor={editor}
                 type={option.type}
-                text={option.label}
+                text={listLabelMap[option.type] || option.label}
                 showTooltip={false}
               />
             </DropdownMenuItem>

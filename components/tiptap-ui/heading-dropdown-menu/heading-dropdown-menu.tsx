@@ -16,6 +16,7 @@ import { useHeadingDropdownMenu } from "@/components/tiptap-ui/heading-dropdown-
 // --- UI Primitives ---
 import type { ButtonProps } from "@/components/tiptap-ui-primitive/button"
 import { Button } from "@/components/tiptap-ui-primitive/button"
+import { useT } from "@/lib/app-language"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -58,6 +59,7 @@ export const HeadingDropdownMenu = forwardRef<
     ref
   ) => {
     const { editor } = useTiptapEditor(providedEditor)
+    const t = useT()
     const [isOpen, setIsOpen] = useState<boolean>(false)
     const { isVisible, isActive, canToggle, Icon } = useHeadingDropdownMenu({
       editor,
@@ -89,9 +91,9 @@ export const HeadingDropdownMenu = forwardRef<
             tabIndex={-1}
             disabled={!canToggle}
             data-disabled={!canToggle}
-            aria-label="Format text as heading"
+            aria-label={t("editorHeading")}
             aria-pressed={isActive}
-            tooltip="Heading"
+            tooltip={t("editorHeading")}
             {...buttonProps}
             ref={ref}
           >
@@ -113,7 +115,7 @@ export const HeadingDropdownMenu = forwardRef<
                 <HeadingButton
                   editor={editor}
                   level={level}
-                  text={`Heading ${level}`}
+                  text={`${t("editorHeadingLevel")} ${level}`}
                   showTooltip={false}
                 />
               </DropdownMenuItem>

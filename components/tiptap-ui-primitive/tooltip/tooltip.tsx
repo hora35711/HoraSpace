@@ -177,19 +177,20 @@ export const TooltipTrigger = forwardRef<HTMLElement, TooltipTriggerProps>(
     const ref = useMergeRefs([context.refs.setReference, propRef, childrenRef])
 
     if (asChild && isValidElement(children)) {
+      const triggerChild = children as React.ReactElement<Record<string, unknown>>
       const dataAttributes = {
         "data-tooltip-state": context.open ? "open" : "closed",
       }
 
-      return cloneElement(
-        children,
-        context.getReferenceProps({
-          ref,
-          ...props,
-          ...(typeof children.props === "object" ? children.props : {}),
-          ...dataAttributes,
-        })
-      )
+      const referenceProps = context.getReferenceProps({
+        ...props,
+        ...(typeof children.props === "object" ? children.props : {}),
+        ...dataAttributes,
+      })
+
+      // cloneElement 只透传回调 ref，不读取其 current；该标准组合模式会被 refs 规则误判。
+      // eslint-disable-next-line react-hooks/refs
+      return cloneElement(triggerChild, { ...referenceProps, ref })
     }
 
     return (

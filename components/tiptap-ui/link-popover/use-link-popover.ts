@@ -114,24 +114,16 @@ export function useLinkHandler(props: LinkHandlerProps) {
   useEffect(() => {
     if (!editor) return
 
-    // Get URL immediately on mount
-    const { href } = editor.getAttributes("link")
-
-    if (isLinkActive(editor) && url === null) {
-      setUrl(href || "")
-    }
-  }, [editor, url])
-
-  useEffect(() => {
-    if (!editor) return
-
     const updateLinkState = () => {
       const { href } = editor.getAttributes("link")
       setUrl(href || "")
     }
 
+    // 下一帧读取初始选区，避免 effect 内同步 setState 造成级联渲染。
+    const frameId = window.requestAnimationFrame(updateLinkState)
     editor.on("selectionUpdate", updateLinkState)
     return () => {
+      window.cancelAnimationFrame(frameId)
       editor.off("selectionUpdate", updateLinkState)
     }
   }, [editor])

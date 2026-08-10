@@ -26,9 +26,8 @@ export const useComposedRef = <T extends HTMLElement>(
 
   return useCallback(
     (instance: T | null) => {
-      if (libRef && "current" in libRef) {
-        ;(libRef as { current: T | null }).current = instance
-      }
+      // 通过统一 ref 写入函数更新内部引用，避免直接修改 Hook 参数。
+      updateRef(libRef, instance)
 
       if (prevUserRef.current) {
         updateRef(prevUserRef.current, null)

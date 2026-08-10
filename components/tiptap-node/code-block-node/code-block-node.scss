@@ -50,5 +50,253 @@
       -webkit-text-fill-color: inherit;
       color: inherit;
     }
+
+    // lowlight 输出 hljs-* token class，这里给写作模式补齐语法层级颜色。
+    .hljs-comment,
+    .hljs-quote {
+      color: color-mix(in srgb, var(--tt-codeblock-text) 55%, transparent);
+      font-style: italic;
+    }
+
+    .hljs-keyword,
+    .hljs-selector-tag,
+    .hljs-subst {
+      color: #c2416b;
+    }
+
+    .hljs-number,
+    .hljs-literal,
+    .hljs-variable,
+    .hljs-template-variable,
+    .hljs-tag .hljs-attr {
+      color: #b45309;
+    }
+
+    .hljs-string,
+    .hljs-doctag {
+      color: #047857;
+    }
+
+    .hljs-title,
+    .hljs-section,
+    .hljs-selector-id,
+    .hljs-selector-class,
+    .hljs-function .hljs-title {
+      color: #2563eb;
+    }
+
+    .hljs-type,
+    .hljs-class .hljs-title,
+    .hljs-built_in {
+      color: #7c3aed;
+    }
+
+    .hljs-tag,
+    .hljs-name,
+    .hljs-attribute {
+      color: #0369a1;
+    }
+
+    .hljs-meta,
+    .hljs-symbol,
+    .hljs-bullet {
+      color: #a16207;
+    }
+
+    .hljs-params {
+      color: color-mix(in srgb, var(--tt-codeblock-text) 78%, transparent);
+    }
+  }
+}
+
+.dark .tiptap.ProseMirror {
+  pre {
+    // 暗色模式下单独提升 token 亮度，保证代码块和页面主题协调。
+    .hljs-keyword,
+    .hljs-selector-tag,
+    .hljs-subst {
+      color: #f0abfc;
+    }
+
+    .hljs-number,
+    .hljs-literal,
+    .hljs-variable,
+    .hljs-template-variable,
+    .hljs-tag .hljs-attr {
+      color: #fbbf24;
+    }
+
+    .hljs-string,
+    .hljs-doctag {
+      color: #86efac;
+    }
+
+    .hljs-title,
+    .hljs-section,
+    .hljs-selector-id,
+    .hljs-selector-class,
+    .hljs-function .hljs-title {
+      color: #93c5fd;
+    }
+
+    .hljs-type,
+    .hljs-class .hljs-title,
+    .hljs-built_in {
+      color: #c4b5fd;
+    }
+
+    .hljs-tag,
+    .hljs-name,
+    .hljs-attribute {
+      color: #7dd3fc;
+    }
+
+    .hljs-meta,
+    .hljs-symbol,
+    .hljs-bullet {
+      color: #fde68a;
+    }
+  }
+}
+
+/* 普通代码块使用轻量顶栏呈现语言，整体边框和底色继续复用现有主题变量。 */
+.tiptap.ProseMirror .hora-code-block-node {
+  margin-block: 1.5em;
+  overflow: hidden;
+  border: 1px solid var(--tt-codeblock-border);
+  border-radius: 0.75rem;
+  background-color: var(--tt-codeblock-bg);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.tiptap.ProseMirror .hora-code-block-node:focus-within {
+  border-color: color-mix(in srgb, var(--tt-brand-color-500) 50%, var(--tt-codeblock-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tt-brand-color-500) 10%, transparent);
+}
+
+.tiptap.ProseMirror .hora-code-block-toolbar {
+  display: flex;
+  min-height: 2.25rem;
+  align-items: center;
+  border-bottom: 1px solid var(--tt-codeblock-border);
+  padding-inline: 0.25rem;
+  background-color: color-mix(in srgb, var(--tt-codeblock-bg) 88%, var(--tt-theme-text) 4%);
+}
+
+.tiptap.ProseMirror .hora-code-block-node > pre {
+  margin: 0;
+  overflow-x: auto;
+  border: 0;
+  border-radius: 0;
+  padding: 1rem 1.1rem 1.15rem;
+}
+
+/* Mermaid 写作节点使用主题语义变量，确保浅色与深色模式无需分别写死颜色。 */
+.tiptap.ProseMirror .hora-mermaid-node {
+  margin-block: 1.5em;
+  overflow: hidden;
+  border: 1px solid var(--tt-codeblock-border);
+  border-radius: 0.75rem;
+  background-color: var(--tt-codeblock-bg);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.tiptap.ProseMirror .hora-mermaid-node-selected {
+  border-color: color-mix(in srgb, var(--tt-brand-color-500) 50%, var(--tt-codeblock-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tt-brand-color-500) 12%, transparent);
+}
+
+.tiptap.ProseMirror .hora-mermaid-toolbar {
+  display: flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.25rem 0.5rem 0.25rem 0.75rem;
+  border-bottom: 1px solid var(--tt-codeblock-border);
+  background-color: color-mix(in srgb, var(--tt-codeblock-bg) 88%, var(--tt-theme-text) 4%);
+}
+
+.tiptap.ProseMirror .hora-mermaid-preview {
+  display: flex;
+  width: 100%;
+  min-height: 9rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  border: 0;
+  padding: 1.25rem;
+  color: var(--tt-codeblock-text);
+  background: transparent;
+  text-align: left;
+}
+
+.tiptap.ProseMirror .hora-mermaid-preview:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--tt-brand-color-500) 70%, transparent);
+  outline-offset: -3px;
+}
+
+.tiptap.ProseMirror .hora-mermaid-svg {
+  display: block;
+  min-width: min(100%, 24rem);
+}
+
+.tiptap.ProseMirror .hora-mermaid-svg > svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}
+
+.tiptap.ProseMirror .hora-mermaid-status,
+.tiptap.ProseMirror .hora-mermaid-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: color-mix(in srgb, var(--tt-codeblock-text) 58%, transparent);
+}
+
+.tiptap.ProseMirror .hora-mermaid-status > svg {
+  width: 1rem;
+  height: 1rem;
+  animation: hora-mermaid-spin 900ms linear infinite;
+}
+
+.tiptap.ProseMirror .hora-mermaid-error {
+  max-width: 42rem;
+  flex-direction: column;
+  align-items: flex-start;
+  color: var(--destructive);
+}
+
+.tiptap.ProseMirror .hora-mermaid-error > span {
+  font-family: "JetBrains Mono NL", monospace;
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+.tiptap.ProseMirror .hora-mermaid-source {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--tt-codeblock-border);
+  border-radius: 0;
+}
+
+.tiptap.ProseMirror .hora-mermaid-source-hidden {
+  display: none;
+}
+
+@keyframes hora-mermaid-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 尊重系统减少动态效果设置，加载图标不再持续旋转。 */
+  .tiptap.ProseMirror .hora-mermaid-status > svg {
+    animation: none;
   }
 }

@@ -38,6 +38,7 @@ import {
   useColorHighlight,
 } from "@/components/tiptap-ui/color-highlight-button"
 import { ButtonGroup } from "@/components/tiptap-ui-primitive/button-group"
+import { useT } from "@/lib/app-language"
 
 export interface ColorHighlightPopoverContentProps {
   /**
@@ -78,22 +79,26 @@ export interface ColorHighlightPopoverProps
 export const ColorHighlightPopoverButton = forwardRef<
   HTMLButtonElement,
   ButtonProps
->(({ className, children, ...props }, ref) => (
-  <Button
-    type="button"
-    className={className}
-    variant="ghost"
-    data-appearance="default"
-    role="button"
-    tabIndex={-1}
-    aria-label="Highlight text"
-    tooltip="Highlight"
-    ref={ref}
-    {...props}
-  >
-    {children ?? <HighlighterIcon className="tiptap-button-icon" />}
-  </Button>
-))
+>(({ className, children, ...props }, ref) => {
+  const t = useT()
+
+  return (
+    <Button
+      type="button"
+      className={className}
+      variant="ghost"
+      data-appearance="default"
+      role="button"
+      tabIndex={-1}
+      aria-label={t("editorHighlight")}
+      tooltip={t("editorHighlight")}
+      ref={ref}
+      {...props}
+    >
+      {children ?? <HighlighterIcon className="tiptap-button-icon" />}
+    </Button>
+  )
+})
 
 ColorHighlightPopoverButton.displayName = "ColorHighlightPopoverButton"
 
@@ -110,11 +115,12 @@ export function ColorHighlightPopoverContent({
 }: ColorHighlightPopoverContentProps) {
   const { handleRemoveHighlight } = useColorHighlight({ editor })
   const isMobile = useIsBreakpoint()
+  const t = useT()
   const containerRef = useRef<HTMLDivElement>(null)
 
   const menuItems = useMemo(
-    () => [...colors, { label: "Remove highlight", value: "none" }],
-    [colors]
+    () => [...colors, { label: t("editorRemoveHighlight"), value: "none" }],
+    [colors, t]
   )
 
   const { selectedIndex } = useMenuNavigation({
@@ -162,8 +168,8 @@ export function ColorHighlightPopoverContent({
           <ButtonGroup>
             <Button
               onClick={handleRemoveHighlight}
-              aria-label="Remove highlight"
-              tooltip="Remove highlight"
+              aria-label={t("editorRemoveHighlight")}
+              tooltip={t("editorRemoveHighlight")}
               tabIndex={selectedIndex === colors.length ? 0 : -1}
               type="button"
               role="menuitem"

@@ -22,20 +22,29 @@ export function useTiptapEditor(providedEditor?: Editor | null): {
   const [storageEditor, setStorageEditor] = useState<Editor | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     if (!mainEditor) {
-      setStorageEditor(null)
-      return
+      // 编辑器卸载后异步清空派生实例，避免 effect 内同步更新造成级联渲染。
+      queueMicrotask(() => {
+        if (!cancelled) setStorageEditor(null)
+      })
+      return () => {
+        cancelled = true
+      }
     }
 
-    const updateHandler = () =>
-      setStorageEditor(getActivePageEditor(mainEditor))
+    const updateHandler = () => {
+      if (!cancelled) setStorageEditor(getActivePageEditor(mainEditor))
+    }
 
-    updateHandler()
+    // 首次派生值放入微任务，事件订阅仍保持同步响应。
+    queueMicrotask(updateHandler)
 
     mainEditor.on("update", updateHandler)
     mainEditor.on("selectionUpdate", updateHandler)
 
     return () => {
+      cancelled = true
       mainEditor.off("update", updateHandler)
       mainEditor.off("selectionUpdate", updateHandler)
     }

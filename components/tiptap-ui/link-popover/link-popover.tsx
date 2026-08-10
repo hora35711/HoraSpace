@@ -33,6 +33,7 @@ import {
 } from "@/components/tiptap-ui-primitive/card"
 import { Input } from "@/components/tiptap-ui-primitive/input"
 import { ButtonGroup } from "@/components/tiptap-ui-primitive/button-group"
+import { useT } from "@/lib/app-language"
 
 import "./link-popover.scss"
 
@@ -81,6 +82,8 @@ export interface LinkPopoverProps
  */
 export const LinkButton = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, children, ...props }, ref) => {
+    const t = useT()
+
     return (
       <Button
         type="button"
@@ -88,8 +91,8 @@ export const LinkButton = forwardRef<HTMLButtonElement, ButtonProps>(
         variant="ghost"
         role="button"
         tabIndex={-1}
-        aria-label="Link"
-        tooltip="Link"
+        aria-label={t("editorLink")}
+        tooltip={t("editorLink")}
         ref={ref}
         {...props}
       >
@@ -113,6 +116,7 @@ const LinkMain: React.FC<LinkMainProps> = ({
   isActive,
 }) => {
   const isMobile = useIsBreakpoint()
+  const t = useT()
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
@@ -135,7 +139,7 @@ const LinkMain: React.FC<LinkMainProps> = ({
         <CardItemGroup orientation="horizontal">
           <Input
             type="url"
-            placeholder="Paste a link..."
+            placeholder={t("editorPasteLink")}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -266,9 +270,14 @@ export const LinkPopover = forwardRef<HTMLButtonElement, LinkPopoverProps>(
     )
 
     useEffect(() => {
-      if (autoOpenOnLinkActive && isActive) {
+      if (!autoOpenOnLinkActive || !isActive) return
+
+      // 自动展开链接面板延后一帧，避免 effect 内同步 setState 造成级联渲染。
+      const frameId = window.requestAnimationFrame(() => {
         setIsOpen(true)
-      }
+      })
+
+      return () => window.cancelAnimationFrame(frameId)
     }, [autoOpenOnLinkActive, isActive])
 
     if (!isVisible) {

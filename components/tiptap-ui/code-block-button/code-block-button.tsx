@@ -19,6 +19,7 @@ import {
 import type { ButtonProps } from "@/components/tiptap-ui-primitive/button"
 import { Button } from "@/components/tiptap-ui-primitive/button"
 import { Badge } from "@/components/tiptap-ui-primitive/badge"
+import { useT } from "@/lib/app-language"
 
 export interface CodeBlockButtonProps
   extends Omit<ButtonProps, "type">, UseCodeBlockConfig {
@@ -64,6 +65,7 @@ export const CodeBlockButton = forwardRef<
     ref
   ) => {
     const { editor } = useTiptapEditor(providedEditor)
+    const t = useT()
     const {
       isVisible,
       canToggle,
@@ -100,9 +102,9 @@ export const CodeBlockButton = forwardRef<
         disabled={!canToggle}
         data-disabled={!canToggle}
         tabIndex={-1}
-        aria-label={label}
+        aria-label={t("editorCodeBlock") || label}
         aria-pressed={isActive}
-        tooltip="Code Block"
+        tooltip={t("editorCodeBlock")}
         onClick={handleClick}
         {...buttonProps}
         ref={ref}

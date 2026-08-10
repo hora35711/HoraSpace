@@ -59,6 +59,8 @@ export function NotesTree({
   const [moveTargetId, setMoveTargetId] = React.useState("")
   // 执行态：防止重复提交。
   const [submitting, setSubmitting] = React.useState(false)
+  // 文件与目录节点都必须经过同一 Hook 顺序；文件节点不会读取该展开状态。
+  const [open, setOpen] = React.useState(false)
 
   // 打开“新建文件”弹层。
   const openCreateFile = (parentId: string) => {
@@ -225,9 +227,6 @@ export function NotesTree({
       </>
     )
   }
-
-  // 目录节点：每个节点维护自己的展开状态，保证箭头方向与当前层级同步。
-  const [open, setOpen] = React.useState(false)
 
   return (
     <SidebarMenuItem>

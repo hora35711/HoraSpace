@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useMemo, useSyncExternalStore } from "react"
 
 type BreakpointMode = "min" | "max"
 
@@ -14,24 +14,20 @@ export function useIsBreakpoint(
   mode: BreakpointMode = "max",
   breakpoint = 768
 ) {
-  const [matches, setMatches] = useState<boolean | undefined>(undefined)
+  const query = useMemo(
+    () => mode === "min"
+      ? `(min-width: ${breakpoint}px)`
+      : `(max-width: ${breakpoint - 1}px)`,
+    [breakpoint, mode],
+  )
+  const subscribe = useCallback((onStoreChange: () => void) => {
+    const mediaQuery = window.matchMedia(query)
+    // matchMedia 是浏览器外部状态，使用订阅模型可避免工具栏先按桌面渲染再闪到移动布局。
+    mediaQuery.addEventListener("change", onStoreChange)
+    return () => mediaQuery.removeEventListener("change", onStoreChange)
+  }, [query])
+  const getSnapshot = useCallback(() => window.matchMedia(query).matches, [query])
+  const getServerSnapshot = useCallback(() => false, [])
 
-  useEffect(() => {
-    const query =
-      mode === "min"
-        ? `(min-width: ${breakpoint}px)`
-        : `(max-width: ${breakpoint - 1}px)`
-
-    const mql = window.matchMedia(query)
-    const onChange = (e: MediaQueryListEvent) => setMatches(e.matches)
-
-    // Set initial value
-    setMatches(mql.matches)
-
-    // Add listener
-    mql.addEventListener("change", onChange)
-    return () => mql.removeEventListener("change", onChange)
-  }, [mode, breakpoint])
-
-  return !!matches
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 }

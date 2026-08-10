@@ -184,9 +184,12 @@ export function useMenuNavigation<T>({
   ])
 
   useEffect(() => {
-    if (query) {
+    if (!query) return
+    // 查询变化后的下一帧重置选择，避免 effect 同步更新引发菜单级联渲染。
+    const frameId = window.requestAnimationFrame(() => {
       setSelectedIndex(autoSelectFirstItem ? 0 : -1)
-    }
+    })
+    return () => window.cancelAnimationFrame(frameId)
   }, [query, autoSelectFirstItem])
 
   return {

@@ -105,8 +105,10 @@ export function useElementRect({
 
   useEffect(() => {
     if (!enabled || !isClientSide()) {
-      setRect(initialRect)
-      return
+      if (!isClientSide()) return
+      // 禁用监听后在下一帧清空尺寸，避免 effect 内同步更新造成额外级联渲染。
+      const frameId = window.requestAnimationFrame(() => setRect(initialRect))
+      return () => window.cancelAnimationFrame(frameId)
     }
 
     const targetElement = getTargetElement()
