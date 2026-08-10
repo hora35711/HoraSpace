@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 import { type NoteTreeNode } from "@/components/sidebar-data"
+import { clearClosedNoteRoute } from "@/lib/notes-editor-state"
 
 // 节点动作类型：统一驱动“新建/重命名/移动/删除”弹层。
 type NoteActionState =
@@ -185,6 +186,8 @@ export function NotesTree({
                       horaNotesBeforeNavigate?: () => Promise<void>
                     }
                     await bridge.horaNotesBeforeNavigate?.()
+                    // 明确标记本次为用户打开动作，不能被“关闭全部标签”的旧路由状态拦截。
+                    clearClosedNoteRoute()
                     // 追加 open 参数，保证同一文件重复点击也会触发打开动作。
                     router.push(`/notes/${item.id}?open=${Date.now()}`)
                   }}

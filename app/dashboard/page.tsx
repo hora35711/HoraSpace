@@ -77,7 +77,6 @@ import {
   LineChart as LineChartIcon,
   NotebookPen,
   PieChart as PieChartIcon,
-  Radar as RadarIcon,
   Target,
   TriangleAlert,
 } from "lucide-react"
@@ -92,11 +91,6 @@ import {
   LineChart,
   Pie,
   PieChart,
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
   RadialBar,
   RadialBarChart,
   XAxis,
@@ -218,10 +212,6 @@ function getStatusDistributionClassName(status: string) {
       return "border-border bg-muted text-muted-foreground dark:bg-muted/70"
   }
 }
-
-const radarChartConfig = {
-  health: { label: "健康度", color: "var(--chart-1)" },
-} satisfies ChartConfig
 
 const radialChartConfig = {
   completion: { label: "总体完成率", color: "var(--chart-2)" },
@@ -557,50 +547,6 @@ export default function DashboardPage() {
     }))
   }, [tasks])
 
-  const radarData = React.useMemo(() => {
-    const doneRate = (done: number, total: number) => completionRate(done, total)
-    const noteCoverage = completionRate(linkedNoteCount, Math.max(noteCount, 1))
-    const overdueControl = Math.max(0, 100 - completionRate(overdueTaskCount, Math.max(tasks.length, 1)))
-    const rhythm = completionRate(tasks.filter((task) => task.status === "doing").length, Math.max(tasks.length, 1))
-
-    return [
-      {
-        axis: "进度",
-        value: doneRate(taskDoneCount, tasks.length),
-      },
-      {
-        axis: "需求",
-        value: doneRate(requirementDoneCount, requirements.length),
-      },
-      {
-        axis: "项目",
-        value: doneRate(projectDoneCount, projects.length),
-      },
-      {
-        axis: "笔记",
-        value: noteCoverage,
-      },
-      {
-        axis: "节奏",
-        value: rhythm,
-      },
-      {
-        axis: "控制",
-        value: overdueControl,
-      },
-    ]
-  }, [
-    linkedNoteCount,
-    noteCount,
-    overdueTaskCount,
-    projectDoneCount,
-    projects.length,
-    requirementDoneCount,
-    requirements.length,
-    taskDoneCount,
-    tasks.length,
-  ])
-
   const radialData = React.useMemo(() => {
     return [
       {
@@ -618,7 +564,6 @@ export default function DashboardPage() {
   const hasRequirementStatusSeries = requirementStatusData.some((item) => item.value > 0)
   const hasTaskStatusSeries = taskStatusData.some((item) => item.value > 0)
   const hasStatusSeries = hasRequirementStatusSeries || hasTaskStatusSeries
-  const hasRadarSeries = radarData.some((item) => item.value > 0)
   const hasProgressSeries = projects.length > 0 || requirements.length > 0 || tasks.length > 0
 
   const hasContent = projects.length > 0 || requirements.length > 0 || tasks.length > 0 || noteCount > 0
@@ -1283,7 +1228,7 @@ export default function DashboardPage() {
           title="项目与需求完成"
           description="line 图对照项目和需求在时间窗口内的完成事件，便于看节奏。"
           icon={<LineChartIcon className="size-4" />}
-          className="xl:col-span-6"
+          className="xl:col-span-12"
         >
           {hasCycleSeries ? (
             <ChartContainer config={cycleChartConfig} className="h-[280px] w-full !aspect-auto">
@@ -1312,30 +1257,6 @@ export default function DashboardPage() {
           )}
         </ChartFrame>
 
-        <ChartFrame
-          title="项目健康雷达"
-          description="radar 图把进度、需求、项目、笔记、节奏和控制几个维度放在一起。"
-          icon={<RadarIcon className="size-4" />}
-          className="xl:col-span-6"
-        >
-          {hasRadarSeries ? (
-            <ChartContainer config={radarChartConfig} className="h-[280px] w-full !aspect-auto">
-              <RadarChart data={radarData}>
-                <PolarGrid />
-                <PolarAngleAxis dataKey="axis" />
-                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} tickCount={5} axisLine={false} />
-                <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
-                <Radar dataKey="value" stroke="var(--color-health)" fill="var(--color-health)" fillOpacity={0.22} />
-              </RadarChart>
-            </ChartContainer>
-          ) : (
-            <ChartEmptyState
-              title="暂无健康雷达"
-              description="目前还没有足够的项目、需求或任务数据。"
-              icon={<RadarIcon className="size-4" />}
-            />
-          )}
-        </ChartFrame>
       </section>
 
       <Dialog open={Boolean(drilldown)} onOpenChange={(open) => !open && setDrilldown(null)}>

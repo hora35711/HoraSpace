@@ -172,7 +172,8 @@ function scrollEditorCursorToCenter(editor: ReturnType<typeof useEditor> | null)
 
   const { from } = editor.state.selection
   const cursorCoords = editor.view.coordsAtPos(from)
-  const editorScroller = editor.view.dom.closest(".simple-editor-wrapper")
+  // 正文容器独立滚动，统计浮层固定在外层时打字机模式也必须滚动正文而不是整个编辑器。
+  const editorScroller = editor.view.dom.closest(".simple-editor-content")
   if (!(editorScroller instanceof HTMLElement)) return
 
   const scrollerRect = editorScroller.getBoundingClientRect()

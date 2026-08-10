@@ -34,6 +34,12 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { createSpace, getSpaceBootstrapState, listMailTree, listSpaces, switchSpace, type SpaceRecord } from "@/lib/hora-db"
 import { useT } from "@/lib/app-language"
+import {
+  clearNoteEditorTabsState,
+  NOTE_EDITOR_ACTIVE_TAB_STORAGE_KEY,
+  NOTE_EDITOR_CLOSED_ROUTE_STORAGE_KEY,
+  NOTE_EDITOR_TABS_STORAGE_KEY,
+} from "@/lib/notes-editor-state"
 
 // 主 Sidebar：导航读取静态配置，Notes 通过 DB + IPC 实时同步。
 export function AppSidebar() {
@@ -106,10 +112,41 @@ export function AppSidebar() {
   const currentSpaceLabel = useMemo(() => currentSpace?.name || t("createSpace"), [currentSpace, t])
 
   async function handleSwitchSpace(spaceId: string) {
-    if (switchingSpaceId === spaceId) return
+    // 点击当前空间不触发重载，也不会误清理正在使用的笔记标签。
+    if (switchingSpaceId === spaceId || currentSpace?.id === spaceId) return
     setSwitchingSpaceId(spaceId)
+    // 切换前保存当前笔记，随后清掉标签缓存，避免新空间恢复旧空间的文件。
+    const noteBridge = window as Window & {
+      horaNotesBeforeNavigate?: () => Promise<void>
+    }
+    const previousEditorState = {
+      tabs: window.localStorage.getItem(NOTE_EDITOR_TABS_STORAGE_KEY),
+      activeTab: window.localStorage.getItem(NOTE_EDITOR_ACTIVE_TAB_STORAGE_KEY),
+      closedRoute: window.localStorage.getItem(NOTE_EDITOR_CLOSED_ROUTE_STORAGE_KEY),
+    }
+    const previousUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`
+
     try {
+      await noteBridge.horaNotesBeforeNavigate?.()
+      clearNoteEditorTabsState()
+      // 空间切换会立即触发整页刷新，先同步改写笔记路由，避免新空间读取旧 noteId。
+      if (pathname.startsWith("/notes/")) {
+        window.history.replaceState(null, "", "/dashboard")
+      }
       await switchSpace(spaceId)
+    } catch (error) {
+      // 切换失败时恢复原标签和路由，不能因为失败操作关闭用户正在编辑的文件。
+      const restoreStorageValue = (key: string, value: string | null) => {
+        if (value === null) window.localStorage.removeItem(key)
+        else window.localStorage.setItem(key, value)
+      }
+      restoreStorageValue(NOTE_EDITOR_TABS_STORAGE_KEY, previousEditorState.tabs)
+      restoreStorageValue(NOTE_EDITOR_ACTIVE_TAB_STORAGE_KEY, previousEditorState.activeTab)
+      restoreStorageValue(NOTE_EDITOR_CLOSED_ROUTE_STORAGE_KEY, previousEditorState.closedRoute)
+      if (pathname.startsWith("/notes/")) {
+        window.history.replaceState(null, "", previousUrl)
+      }
+      console.error("切换空间失败", error)
     } finally {
       setSwitchingSpaceId(null)
     }

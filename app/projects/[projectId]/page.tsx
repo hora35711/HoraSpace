@@ -87,6 +87,7 @@ import {
   saveProjectsDetailSnapshot,
   saveProjectsListSnapshot,
 } from "@/lib/projects-navigation-state"
+import { clearClosedNoteRoute } from "@/lib/notes-editor-state"
 
 // 项目详情的颜色选项也走低饱和方案，尽量和列表页保持一致。
 const COLOR_OPTIONS = ["#8AA8E8", "#8CC9A1", "#E2B36B", "#E8C57A", "#E28A8A", "#A8B3C7"]
@@ -619,6 +620,8 @@ export default function ProjectDetailPage() {
   }
 
   const openLinkedNote = (noteId: string) => {
+    // 关联笔记也属于明确打开动作，进入 Notes 前先解除旧的空标签路由拦截。
+    clearClosedNoteRoute()
     // 加 open 时间戳强制 Notes 页识别为一次新的打开动作，避免复用空白状态。
     router.push(`/notes/${noteId}?open=${Date.now()}`)
   }

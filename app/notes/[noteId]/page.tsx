@@ -26,6 +26,14 @@ import {
 } from "lucide-react"
 import { SimpleEditor } from "@/components/tiptap-templates/simple/simple-editor"
 import { type AppLanguage, useAppLanguage, useT } from "@/lib/app-language"
+import {
+  clearClosedNoteRoute,
+  NOTE_EDITOR_ACTIVE_TAB_STORAGE_KEY,
+  NOTE_EDITOR_NO_OPEN_KEY,
+  NOTE_EDITOR_TABS_STORAGE_KEY,
+  readClosedNoteRoute,
+  writeClosedNoteRoute,
+} from "@/lib/notes-editor-state"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -650,11 +658,6 @@ function MarkdownPreview({
   )
 }
 
-const TABS_STORAGE_KEY = "hora_editor_tabs"
-const ACTIVE_TAB_STORAGE_KEY = "hora_editor_active_tab"
-// 没有 URL open 参数时也需要一个稳定占位，用来区分“关闭后的空白页”和“重新点击打开”。
-const BLANK_ROUTE_NO_OPEN_KEY = "__hora_blank_route_without_open__"
-
 // 笔记编辑页：左侧点击文件后，在右侧展示并编辑。
 export default function NoteEditorPage() {
   // 动态路由参数：noteId 由 Sidebar 文件节点带入。
@@ -665,7 +668,7 @@ export default function NoteEditorPage() {
   const openKey = searchParams.get("open")
   const initialRouteRef = React.useRef({
     noteId: noteId ?? null,
-    openKey: openKey ?? BLANK_ROUTE_NO_OPEN_KEY,
+    openKey: openKey ?? NOTE_EDITOR_NO_OPEN_KEY,
   })
   const { language } = useAppLanguage()
   const t = useT()
@@ -778,8 +781,10 @@ export default function NoteEditorPage() {
 
   // 立即持久化标签状态：避免路由瞬时切换导致读取到旧缓存。
   const persistTabsState = React.useCallback((nextTabs: EditorTab[], nextActiveTabId: string) => {
-    window.localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(nextTabs))
-    window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, nextActiveTabId)
+    window.localStorage.setItem(NOTE_EDITOR_TABS_STORAGE_KEY, JSON.stringify(nextTabs))
+    window.localStorage.setItem(NOTE_EDITOR_ACTIVE_TAB_STORAGE_KEY, nextActiveTabId)
+    // 重新出现有效标签后，旧的“全部关闭”路由不再有资格拦截文件加载。
+    if (nextTabs.length > 0) clearClosedNoteRoute()
   }, [])
 
   // 当前编辑内容一旦发生实际修改，就把脏标记打开，后续切换文件时会自动保存。
@@ -805,8 +810,8 @@ export default function NoteEditorPage() {
 
   // 首次恢复标签状态。
   useEffect(() => {
-    const rawTabs = window.localStorage.getItem(TABS_STORAGE_KEY)
-    const rawActive = window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY)
+    const rawTabs = window.localStorage.getItem(NOTE_EDITOR_TABS_STORAGE_KEY)
+    const rawActive = window.localStorage.getItem(NOTE_EDITOR_ACTIVE_TAB_STORAGE_KEY)
 
     if (rawTabs) {
       try {
@@ -817,8 +822,15 @@ export default function NoteEditorPage() {
           setTabs([])
           setActiveTabId("")
           activeTabIdRef.current = ""
-          setBlankRouteNoteId(initialRouteRef.current.noteId)
-          setBlankRouteOpenKey(initialRouteRef.current.openKey)
+          const closedRoute = readClosedNoteRoute()
+          const initialRoute = initialRouteRef.current
+          const isSameClosedRoute = closedRoute?.noteId === initialRoute.noteId
+            && closedRoute.openKey === initialRoute.openKey
+
+          // 只有真实关闭标签时记录的同一路由保持空白；新点击带来的路由必须首次就加载。
+          setBlankRouteNoteId(isSameClosedRoute ? initialRoute.noteId : null)
+          setBlankRouteOpenKey(isSameClosedRoute ? initialRoute.openKey : null)
+          if (!isSameClosedRoute) clearClosedNoteRoute()
         }
       } catch {
         // 保留注释：本地缓存损坏时回退默认标签。
@@ -839,13 +851,13 @@ export default function NoteEditorPage() {
     // 未完成恢复前禁止写缓存，防止把历史标签误覆盖为默认单标签。
     if (!tabsRestored) return
     tabsRef.current = tabs
-    window.localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(tabs))
+    window.localStorage.setItem(NOTE_EDITOR_TABS_STORAGE_KEY, JSON.stringify(tabs))
   }, [tabs, tabsRestored])
 
   useEffect(() => {
     // 未完成恢复前禁止写缓存，保持本地状态一致性。
     if (!tabsRestored) return
-    window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTabId)
+    window.localStorage.setItem(NOTE_EDITOR_ACTIVE_TAB_STORAGE_KEY, activeTabId)
     activeTabIdRef.current = activeTabId
   }, [activeTabId, tabsRestored])
 
@@ -894,7 +906,7 @@ export default function NoteEditorPage() {
         tabs.length === 0 &&
         currentNoteId === blankRouteNoteId &&
         // 只有关闭那一刻的原始路由才保持空白，重新点击同一笔记会带新 openKey 并立即打开内容。
-        (openKey ?? BLANK_ROUTE_NO_OPEN_KEY) === blankRouteOpenKey
+        (openKey ?? NOTE_EDITOR_NO_OPEN_KEY) === blankRouteOpenKey
       ) {
         setTitle("未打开文件")
         setPathParts([])
@@ -1474,7 +1486,12 @@ export default function NoteEditorPage() {
       setTabs([])
       setActiveTabId("")
       setBlankRouteNoteId(noteId ?? null)
-      setBlankRouteOpenKey(openKey ?? BLANK_ROUTE_NO_OPEN_KEY)
+      setBlankRouteOpenKey(openKey ?? NOTE_EDITOR_NO_OPEN_KEY)
+      // 持久化真正的关闭路由，页面重新挂载时不会误判其它首次点击。
+      writeClosedNoteRoute({
+        noteId: noteId ?? null,
+        openKey: openKey ?? NOTE_EDITOR_NO_OPEN_KEY,
+      })
       setTitle("未打开文件")
       setPathParts([])
       setInitialMarkdownBody("")

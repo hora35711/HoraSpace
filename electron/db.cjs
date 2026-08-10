@@ -2764,7 +2764,7 @@ function deleteMailFolderToInbox(folderId) {
   const txn = db.transaction(() => {
     db.prepare(`
       UPDATE mail_messages
-      SET folder_id = ?, pending_action = 'move', sync_status = 'pending', updated_at = ?
+      SET folder_id = ?, message_uid = NULL, pending_action = NULL, sync_status = 'synced', last_error = NULL, updated_at = ?
       WHERE folder_id = ?
     `).run(inbox.id, now, folder.id)
     db.prepare(`
@@ -2853,6 +2853,42 @@ function findMailMessageByUid(folderId, messageUid) {
   return row || null
 }
 
+// 对外：按文件夹读取完整邮件索引，远端批量移动后需要逐封回写新 UID。
+function listMailMessagesByFolder(folderId) {
+  const rows = getDb().prepare(`
+    SELECT
+      id,
+      account_id AS accountId,
+      folder_id AS folderId,
+      message_uid AS messageUid,
+      message_id AS messageId,
+      subject,
+      from_json AS fromJson,
+      to_json AS toJson,
+      cc_json AS ccJson,
+      bcc_json AS bccJson,
+      reply_to_json AS replyToJson,
+      sent_at AS sentAt,
+      received_at AS receivedAt,
+      snippet,
+      flags_json AS flagsJson,
+      is_read AS isRead,
+      is_starred AS isStarred,
+      has_attachments AS hasAttachments,
+      size,
+      body_cache_path AS bodyCachePath,
+      raw_cache_path AS rawCachePath,
+      pending_action AS pendingAction,
+      sync_status AS syncStatus,
+      last_error AS lastError,
+      updated_at AS updatedAt
+    FROM mail_messages
+    WHERE folder_id = ?
+    ORDER BY received_at DESC, updated_at DESC
+  `).all(folderId)
+  return rows.map((row) => hydrateMailMessage(row))
+}
+
 // 对外：只更新 flags 派生状态，避免刷新远端已读时覆盖正文和其他 metadata。
 function updateMailMessageFlags(messageId, flags) {
   const flagList = Array.isArray(flags) ? flags : []
@@ -2892,7 +2928,20 @@ function updateMailMessageSyncResult(messageId, input = {}) {
 function upsertMailMessage(input) {
   const db = getDb()
   const now = new Date().toISOString()
-  const id = input.id || buildMailMessageId(input.accountId, input.folderId, input.messageUid, input.messageId)
+  // 服务器 MOVE 后本地邮件仍保留原 ID；目标文件夹同步时先按新 UID 复用记录，再用 message_id 兜底去重。
+  const existingByUid = input.messageUid ? db.prepare(`
+    SELECT id
+    FROM mail_messages
+    WHERE account_id = ? AND folder_id = ? AND message_uid = ?
+    LIMIT 1
+  `).get(input.accountId, input.folderId, String(input.messageUid)) : null
+  const pendingMoved = input.messageId ? db.prepare(`
+    SELECT id
+    FROM mail_messages
+    WHERE account_id = ? AND folder_id = ? AND message_id = ? AND message_uid IS NULL
+    LIMIT 1
+  `).get(input.accountId, input.folderId, input.messageId) : null
+  const id = input.id || existingByUid?.id || pendingMoved?.id || buildMailMessageId(input.accountId, input.folderId, input.messageUid, input.messageId)
   const flags = Array.isArray(input.flags) ? input.flags : []
   const isRead = input.isRead ?? flags.some((flag) => String(flag).toLowerCase() === "\\seen")
   const isStarred = input.isStarred ?? flags.some((flag) => String(flag).toLowerCase() === "\\flagged")
@@ -3301,11 +3350,27 @@ function markMailFolderRead(folderId) {
 function moveMailMessageLocal(input) {
   const current = getMailMessage(input.messageId)
   if (!current) throw new Error("邮件不存在")
+  const hasMessageUid = Object.prototype.hasOwnProperty.call(input, "messageUid")
   getDb().prepare(`
     UPDATE mail_messages
-    SET folder_id = ?, updated_at = ?
+    SET
+      folder_id = ?,
+      message_uid = CASE WHEN ? THEN ? ELSE message_uid END,
+      pending_action = ?,
+      sync_status = ?,
+      last_error = ?,
+      updated_at = ?
     WHERE id = ?
-  `).run(input.targetFolderId, new Date().toISOString(), input.messageId)
+  `).run(
+    input.targetFolderId,
+    hasMessageUid ? 1 : 0,
+    hasMessageUid && input.messageUid ? String(input.messageUid) : null,
+    input.pendingAction || null,
+    input.syncStatus || "synced",
+    input.lastError || null,
+    new Date().toISOString(),
+    input.messageId,
+  )
   refreshMailFolderCounts(current.folderId)
   refreshMailFolderCounts(input.targetFolderId)
   return getMailMessage(input.messageId)
@@ -3383,11 +3448,27 @@ function moveMailMessage(input) {
   if (!current) throw new Error("邮件不存在")
 
   const now = new Date().toISOString()
+  const hasMessageUid = Object.prototype.hasOwnProperty.call(input, "messageUid")
   db.prepare(`
     UPDATE mail_messages
-    SET folder_id = ?, pending_action = 'move', sync_status = 'pending', updated_at = ?
+    SET
+      folder_id = ?,
+      message_uid = CASE WHEN ? THEN ? ELSE message_uid END,
+      pending_action = ?,
+      sync_status = ?,
+      last_error = ?,
+      updated_at = ?
     WHERE id = ?
-  `).run(input.targetFolderId, now, input.messageId)
+  `).run(
+    input.targetFolderId,
+    hasMessageUid ? 1 : 0,
+    hasMessageUid && input.messageUid ? String(input.messageUid) : null,
+    input.pendingAction || "move",
+    input.syncStatus || "pending",
+    input.lastError || null,
+    now,
+    input.messageId,
+  )
   refreshMailFolderCounts(current.folderId)
   refreshMailFolderCounts(input.targetFolderId)
   return getMailMessage(input.messageId)
@@ -3750,6 +3831,7 @@ module.exports = {
   saveMailBody,
   saveMailAttachments,
   listMailMessages,
+  listMailMessagesByFolder,
   listMailReminderMessages,
   listMailRuleCandidateMessages,
   listPendingMailMessages,

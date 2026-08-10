@@ -10,9 +10,20 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
@@ -159,6 +170,7 @@ export function MailClient({ accountId, folderId, view = "mailbox" }: MailClient
   const [composeOpen, setComposeOpen] = React.useState(false)
   const [ruleDialogOpen, setRuleDialogOpen] = React.useState(false)
   const [ruleDraft, setRuleDraft] = React.useState<RuleDraft | null>(null)
+  const [deleteCandidate, setDeleteCandidate] = React.useState<MailMessageRecord | null>(null)
   const [activeAccountId, setActiveAccountId] = React.useState<string | undefined>(accountId)
   const [loading, setLoading] = React.useState(true)
   const [syncingInbox, setSyncingInbox] = React.useState(false)
@@ -400,12 +412,19 @@ export function MailClient({ accountId, folderId, view = "mailbox" }: MailClient
   }
 
   const handleDeleteMessage = async (message: MailMessageRecord) => {
-    await deleteMailMessage(message.id)
-    await loadMessages(currentFolder?.id)
+    const deleted = await deleteMailMessage(message.id)
+    setDeleteCandidate(null)
+    if (deleted) {
+      await loadMessages(currentFolder?.id)
+      setSyncResult({ ok: true, message: "邮件已删除" })
+      return
+    }
+    setSyncResult({ ok: false, message: "远端删除失败，本地已保留邮件并记录待处理状态。" })
   }
 
   const handleBlockSender = async (message: MailMessageRecord) => {
-    await blockMailSender({ messageId: message.id })
+    const rule = await blockMailSender({ messageId: message.id })
+    setSyncResult({ ok: true, message: `已屏蔽发件人，并处理 ${rule?.appliedCount || 0} 封历史邮件。` })
     await loadMessages(currentFolder?.id)
   }
 
@@ -422,7 +441,7 @@ export function MailClient({ accountId, folderId, view = "mailbox" }: MailClient
 
   const handleSaveArchiveRule = async () => {
     if (!ruleDraft?.value.trim() || !ruleDraft.targetFolderId) return
-    await saveMailRule({
+    const rule = await saveMailRule({
       accountId: ruleDraft.message.accountId,
       name: `自动归档：${ruleDraft.value.trim()}`,
       ruleType: "archive",
@@ -433,6 +452,7 @@ export function MailClient({ accountId, folderId, view = "mailbox" }: MailClient
       enabled: true,
       applyExisting: true,
     })
+    setSyncResult({ ok: true, message: `规则已保存，并移动 ${rule?.appliedCount || 0} 封历史邮件。` })
     setRuleDialogOpen(false)
     setRuleDraft(null)
     await loadMessages(currentFolder?.id)
@@ -527,14 +547,14 @@ export function MailClient({ accountId, folderId, view = "mailbox" }: MailClient
           </EmptyContent>
         </Empty>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-lg border md:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-lg border md:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[390px_minmax(0,1fr)]">
           <MessageList
             folders={folders}
             loading={loading}
             messages={messages}
             selectedMessage={selectedMessage}
             view={view}
-            onDelete={handleDeleteMessage}
+            onDelete={setDeleteCandidate}
             onBlockSender={handleBlockSender}
             onCreateArchiveRule={handleOpenArchiveRule}
             onMove={handleMoveMessage}
@@ -567,23 +587,49 @@ export function MailClient({ accountId, folderId, view = "mailbox" }: MailClient
         onOpenChange={setRuleDialogOpen}
         onSubmit={handleSaveArchiveRule}
       />
+      <AlertDialog open={Boolean(deleteCandidate)} onOpenChange={(open) => !open && setDeleteCandidate(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除这封邮件？</AlertDialogTitle>
+            <AlertDialogDescription>
+              会先尝试从远端邮箱删除，成功后再清理本地缓存；如果远端失败，本地会保留邮件避免误删。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => deleteCandidate && void handleDeleteMessage(deleteCandidate)}
+            >
+              删除邮件
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
 
 export function MailSettingsPanel() {
   const [accounts, setAccounts] = React.useState<MailAccountRecord[]>([])
+  const [settingsFolders, setSettingsFolders] = React.useState<MailFolderRecord[]>([])
   const [rules, setRules] = React.useState<MailRuleRecord[]>([])
   const [notificationSettings, setNotificationSettings] = React.useState<MailNotificationSettings | null>(null)
+  const [editingRule, setEditingRule] = React.useState<MailRuleRecord | null>(null)
   const [accountDialogOpen, setAccountDialogOpen] = React.useState(false)
   const [accountDraft, setAccountDraft] = React.useState<MailAccountInput>(DEFAULT_ACCOUNT_DRAFT)
   const [savingAccount, setSavingAccount] = React.useState(false)
   const [testingAccount, setTestingAccount] = React.useState(false)
   const [syncingId, setSyncingId] = React.useState<string | null>(null)
+  const [settingsResult, setSettingsResult] = React.useState<string | null>(null)
   const [accountTestResult, setAccountTestResult] = React.useState<string | null>(null)
 
   const loadAccounts = React.useCallback(async () => {
-    setAccounts(await listMailAccounts())
+    const rows = await listMailAccounts()
+    // 设置页需要把规则目标文件夹翻译成名称，因此账号加载后顺手读取所有账号的目录。
+    const folderRows = (await Promise.all(rows.map((account) => listMailFolders(account.id)))).flat()
+    setAccounts(rows)
+    setSettingsFolders(folderRows)
   }, [])
 
   const loadNotificationSettings = React.useCallback(async () => {
@@ -684,6 +730,23 @@ export function MailSettingsPanel() {
     await loadRules()
   }
 
+  const handleToggleRule = async (rule: MailRuleRecord, enabled: boolean) => {
+    // 启停规则只改配置，不重新处理历史邮件，避免误操作造成大量移动。
+    await saveMailRule({ ...rule, enabled, applyExisting: false })
+    await loadRules()
+  }
+
+  const handleSaveEditingRule = async (rule: MailRuleRecord) => {
+    // 编辑规则后立即应用到历史邮件，保持和新建规则一致的归档预期。
+    const saved = await saveMailRule({ ...rule, applyExisting: true })
+    setEditingRule(null)
+    await loadRules()
+    await loadAccounts()
+    const appliedCount = saved?.appliedCount || 0
+    setSettingsResult(`规则已更新，并处理 ${appliedCount} 封历史邮件。`)
+    return appliedCount
+  }
+
   return (
     <Card>
       <CardContent className="flex flex-col gap-4 p-6">
@@ -762,6 +825,7 @@ export function MailSettingsPanel() {
             <h2 className="text-lg font-semibold">自动规则与屏蔽</h2>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">在邮件列表右键可创建自动归档规则，也可以屏蔽发件人。</p>
+          {settingsResult ? <div className="mt-3 rounded-md border bg-background px-3 py-2 text-sm text-muted-foreground">{settingsResult}</div> : null}
 
           {rules.length === 0 ? (
             <Empty className="mt-3 rounded-md border border-dashed py-8">
@@ -774,22 +838,35 @@ export function MailSettingsPanel() {
             <div className="mt-3 flex flex-col gap-2">
               {rules.map((rule) => {
                 const account = accounts.find((item) => item.id === rule.accountId)
+                const target = settingsFolders.find((folder) => folder.id === rule.targetFolderId)
                 return (
-                  <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background px-3 py-2">
+                  <div key={rule.id} className="rounded-lg border bg-background p-3 shadow-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <Badge variant={rule.ruleType === "block" ? "outline" : "secondary"}>
                           {rule.ruleType === "block" ? "屏蔽" : "归档"}
                         </Badge>
+                        <Badge variant={rule.enabled ? "default" : "outline"}>{rule.enabled ? "启用" : "停用"}</Badge>
                         <span className="truncate text-sm font-medium">{rule.name}</span>
                       </div>
                       <p className="mt-1 truncate text-xs text-muted-foreground">
                         {account?.emailAddress || "全局"} · {rule.field} {rule.operator === "equals" ? "等于" : "包含"} “{rule.value}”
                       </p>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {rule.ruleType === "block" ? "动作：移动到垃圾邮件" : `动作：移动到 ${target?.name || "未选择文件夹"}`}
+                      </p>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => void handleDeleteRule(rule.id)}>
-                      删除规则
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Switch checked={rule.enabled} onCheckedChange={(checked) => void handleToggleRule(rule, checked)} />
+                      <Button variant="outline" size="sm" onClick={() => setEditingRule(rule)}>
+                        编辑
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => void handleDeleteRule(rule.id)}>
+                        删除
+                      </Button>
+                    </div>
+                    </div>
                   </div>
                 )
               })}
@@ -890,8 +967,128 @@ export function MailSettingsPanel() {
             ))}
           </div>
         )}
+        <RuleEditDialog
+          open={Boolean(editingRule)}
+          rule={editingRule}
+          folders={settingsFolders}
+          onRuleChange={setEditingRule}
+          onOpenChange={(open) => !open && setEditingRule(null)}
+          onSubmit={handleSaveEditingRule}
+        />
       </CardContent>
     </Card>
+  )
+}
+
+function RuleEditDialog({
+  open,
+  rule,
+  folders,
+  onRuleChange,
+  onOpenChange,
+  onSubmit,
+}: {
+  open: boolean
+  rule: MailRuleRecord | null
+  folders: MailFolderRecord[]
+  onRuleChange: (rule: MailRuleRecord | null) => void
+  onOpenChange: (open: boolean) => void
+  onSubmit: (rule: MailRuleRecord) => Promise<number>
+}) {
+  const [saving, setSaving] = React.useState(false)
+  const [resultText, setResultText] = React.useState<string | null>(null)
+  const targetFolders = folders.filter((folder) => folder.role === "custom" || folder.role === "archive")
+
+  const handleSubmit = async () => {
+    if (!rule?.value.trim()) return
+    setSaving(true)
+    try {
+      const appliedCount = await onSubmit(rule)
+      setResultText(`规则已更新，并处理 ${appliedCount} 封历史邮件。`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  React.useEffect(() => {
+    if (open) setResultText(null)
+  }, [open])
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>编辑邮件规则</DialogTitle>
+          <DialogDescription>调整条件或目标后，会立即重新扫描历史邮件并应用规则。</DialogDescription>
+        </DialogHeader>
+
+        {rule ? (
+          <div className="flex flex-col gap-4">
+            <Field label="规则名称">
+              <Input value={rule.name} onChange={(event) => onRuleChange({ ...rule, name: event.target.value })} />
+            </Field>
+            <Field label="匹配字段">
+              <Select value={rule.field} onValueChange={(value: MailRuleRecord["field"]) => onRuleChange({ ...rule, field: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="from">发件人邮箱</SelectItem>
+                  <SelectItem value="sender_name">发件人名称</SelectItem>
+                  <SelectItem value="subject">标题</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <div className="grid gap-3 md:grid-cols-[160px_1fr]">
+              <Field label="匹配方式">
+                <Select value={rule.operator} onValueChange={(value: MailRuleRecord["operator"]) => onRuleChange({ ...rule, operator: value })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="contains">包含</SelectItem>
+                    <SelectItem value="equals">等于</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="匹配内容">
+                <Input value={rule.value} onChange={(event) => onRuleChange({ ...rule, value: event.target.value })} />
+              </Field>
+            </div>
+            {rule.ruleType === "archive" ? (
+              <Field label="移动到文件夹">
+                <Select value={rule.targetFolderId || ""} onValueChange={(value) => onRuleChange({ ...rule, targetFolderId: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择文件夹" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {targetFolders.map((folder) => (
+                      <SelectItem key={folder.id} value={folder.id}>
+                        {folder.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            ) : null}
+            <div className="flex items-center justify-between rounded-md border bg-muted/20 px-3 py-2">
+              <Label className="text-sm">启用规则</Label>
+              <Switch checked={rule.enabled} onCheckedChange={(checked) => onRuleChange({ ...rule, enabled: checked })} />
+            </div>
+            {resultText ? <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">{resultText}</div> : null}
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            取消
+          </Button>
+          <Button onClick={handleSubmit} disabled={saving || !rule?.value.trim() || (rule.ruleType === "archive" && !rule.targetFolderId)}>
+            {saving ? "保存中" : "保存规则"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1062,7 +1259,7 @@ function MessageList({
   const inboxFolderId = folders.find((folder) => folder.role === "inbox")?.id
 
   return (
-    <div className="min-h-0 overflow-y-auto border-r">
+    <div className="min-h-0 overflow-y-auto border-r bg-background">
       {messages.length === 0 ? (
         <Empty className="h-full">
           <EmptyHeader>
@@ -1080,8 +1277,8 @@ function MessageList({
               <button
                 type="button"
                 className={cn(
-                  "block w-full border-b px-4 py-3 text-left hover:bg-muted/60",
-                  selectedMessage?.id === message.id && "bg-muted",
+                  "block w-full border-b px-4 py-3 text-left transition-colors hover:bg-muted/50",
+                  selectedMessage?.id === message.id && "bg-muted/80",
                 )}
                 onClick={() => void onSelect(message)}
               >
@@ -1089,28 +1286,29 @@ function MessageList({
                   <div className="flex min-w-0 items-center gap-2">
                     <span
                       className={cn(
-                        "h-2 w-2 shrink-0 rounded-full",
-                        message.isRead ? "bg-transparent" : "bg-primary",
+                        "size-2 shrink-0 rounded-full ring-2 ring-background",
+                        message.isRead ? "bg-transparent" : "bg-primary shadow-sm shadow-primary/30",
                       )}
                     />
-                    <span className={cn("truncate text-sm", !message.isRead && "font-semibold")}>
+                    <span className={cn("truncate text-[13px] tracking-tight", !message.isRead && "font-semibold text-foreground")}>
                       {message.from[0]?.name || message.from[0]?.address || "未知发件人"}
                     </span>
                   </div>
-                  <div className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                  <div className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
                     {message.remindAt ? <Clock className="size-3.5" /> : null}
                     <span>{message.remindAt ? formatMailDate(message.remindAt) : formatMailDate(message.receivedAt)}</span>
                   </div>
                 </div>
-                <div className={cn("mt-1 truncate text-sm", !message.isRead && "font-medium")}>{message.subject || "(无主题)"}</div>
-                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                <div className={cn("mt-1 truncate pl-4 text-sm leading-5", !message.isRead && "font-medium text-foreground")}>{message.subject || "(无主题)"}</div>
+                <div className="mt-1 flex items-center gap-2 pl-4 text-xs text-muted-foreground">
                   {message.hasAttachments ? <Paperclip className="size-3.5" /> : null}
-                  {message.remindAt ? <Badge variant="secondary">提醒</Badge> : null}
+                  {message.remindAt ? <Clock className="size-3.5 text-primary" /> : null}
                   <span className="truncate">{message.snippet || "无正文预览"}</span>
                 </div>
               </button>
             </ContextMenuTrigger>
-            <ContextMenuContent>
+            <ContextMenuContent className="min-w-56">
+              <ContextMenuLabel>回复</ContextMenuLabel>
               <ContextMenuItem onSelect={() => onReply(message, "reply")}>
                 <CornerUpLeft className="size-4" />
                 回复
@@ -1124,6 +1322,7 @@ function MessageList({
                 转发
               </ContextMenuItem>
               <ContextMenuSeparator />
+              <ContextMenuLabel>处理</ContextMenuLabel>
               <ContextMenuItem onSelect={() => onMarkRead(message, !message.isRead)}>
                 <Mail className="size-4" />
                 {message.isRead ? "标为未读" : "标为已读"}
@@ -1148,6 +1347,8 @@ function MessageList({
                   <ContextMenuItem onSelect={() => onRemind(message, "nextWeek")}>下周</ContextMenuItem>
                 </ContextMenuSubContent>
               </ContextMenuSub>
+              <ContextMenuSeparator />
+              <ContextMenuLabel>移动</ContextMenuLabel>
               <ContextMenuSub>
                 <ContextMenuSubTrigger>
                   <MoveRight className="size-4" />
@@ -1173,6 +1374,7 @@ function MessageList({
                 {folders.find((folder) => folder.id === message.folderId)?.role === "archive" ? "移除归档" : "移回收件箱"}
               </ContextMenuItem>
               <ContextMenuSeparator />
+              <ContextMenuLabel>危险操作</ContextMenuLabel>
               <ContextMenuItem variant="destructive" onSelect={() => onMoveToRole(message, "trash")} disabled={!folders.some((folder) => folder.role === "trash")}>
                 <Trash2 className="size-4" />
                 移动至废纸篓
@@ -1198,8 +1400,8 @@ function MessageDetail({
 }) {
   if (!message) {
     return (
-      <div className="hidden min-h-0 overflow-hidden md:block">
-        <Empty className="h-full">
+      <div className="hidden min-h-0 bg-muted/10 md:flex md:items-center md:justify-center">
+        <Empty className="max-w-sm rounded-xl border border-dashed bg-background/80 px-8 py-10 shadow-sm">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <PenLine className="size-5" />
@@ -1213,11 +1415,16 @@ function MessageDetail({
   }
 
   return (
-    <div className="hidden min-h-0 overflow-hidden md:block">
-      <div className="border-b p-4">
+    <div className="hidden min-h-0 bg-muted/10 md:flex md:flex-col">
+      <div className="border-b bg-background/90 p-4 backdrop-blur">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold">{message.subject || "(无主题)"}</h2>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {!message.isRead ? <Badge variant="secondary">未读</Badge> : null}
+              {message.remindAt ? <Badge variant="outline">已提醒</Badge> : null}
+              {message.hasAttachments ? <Badge variant="outline">附件</Badge> : null}
+            </div>
+            <h2 className="truncate text-xl font-semibold tracking-tight">{message.subject || "(无主题)"}</h2>
             <p className="mt-1 truncate text-sm text-muted-foreground">
               {message.from[0]?.name || message.from[0]?.address || "未知发件人"} · {formatMailDate(message.receivedAt)}
             </p>
@@ -1228,9 +1435,9 @@ function MessageDetail({
         </div>
       </div>
 
-      <div className="min-h-0 space-y-4 overflow-hidden p-4">
-        <Card>
-          <CardContent className="p-4">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        <Card className="shadow-sm">
+          <CardContent className="p-5">
             <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6">{message.body.textBody || "这封邮件还没有离线正文。"}</pre>
           </CardContent>
         </Card>

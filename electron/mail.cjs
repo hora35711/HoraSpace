@@ -415,6 +415,65 @@ function matchesMailRule(rule, message) {
   return rule.operator === "equals" ? source === value : source.includes(value)
 }
 
+// 从 UIDPLUS 的 MOVE 结果里取目标文件夹新 UID；没有返回时用 null 清空旧 UID，避免继续误用。
+function getMovedMessageUid(result, sourceUid) {
+  const uid = result?.uidMap?.get?.(Number(sourceUid))
+  return Number.isFinite(Number(uid)) ? String(uid) : null
+}
+
+// 批量移动邮件：按来源文件夹复用 IMAP 连接，成功后把本地文件夹和新 UID 一起写回。
+async function moveMailMessagesToFolder(messages, targetFolder) {
+  if (!targetFolder?.isRemote) throw new Error("目标远端文件夹不存在")
+  const sourceGroups = new Map()
+  let movedCount = 0
+
+  for (const message of messages || []) {
+    if (!message || message.folderId === targetFolder.id) continue
+    if (!message.messageUid) {
+      // 本地离线占位邮件没有远端 UID，只能移动本地索引并等待目标文件夹后续同步补齐。
+      db.moveMailMessageLocal({ messageId: message.id, targetFolderId: targetFolder.id, messageUid: null, syncStatus: "synced" })
+      movedCount += 1
+      continue
+    }
+    const sourceFolder = db.getMailFolder(message.folderId)
+    const account = sourceFolder ? db.getMailAccountInternal(message.accountId) : null
+    if (!sourceFolder?.isRemote || !account) throw new Error("邮件账号或来源文件夹不存在")
+    const key = `${message.accountId}:${sourceFolder.id}`
+    if (!sourceGroups.has(key)) sourceGroups.set(key, { account, sourceFolder, messages: [] })
+    sourceGroups.get(key).messages.push(message)
+  }
+
+  for (const group of sourceGroups.values()) {
+    const client = createImapClient(group.account)
+    let lock = null
+    try {
+      await client.connect()
+      lock = await client.getMailboxLock(group.sourceFolder.path)
+      const sourceUids = group.messages.map((message) => Number(message.messageUid)).filter((uid) => Number.isFinite(uid))
+      if (sourceUids.length === 0) continue
+      const result = await client.messageMove(sourceUids, targetFolder.path, { uid: true })
+      for (const message of group.messages) {
+        db.moveMailMessageLocal({
+          messageId: message.id,
+          targetFolderId: targetFolder.id,
+          messageUid: getMovedMessageUid(result, message.messageUid),
+          syncStatus: "synced",
+        })
+        movedCount += 1
+      }
+    } finally {
+      if (lock) lock.release()
+      try {
+        await client.logout()
+      } catch {
+        // 连接异常时 logout 可能失败，保留上游真实 MOVE 错误即可。
+      }
+    }
+  }
+
+  return movedCount
+}
+
 // 新邮件入库后应用规则：屏蔽优先移动到垃圾邮件，自动归档移动到指定文件夹。
 async function applyRulesToMessage(message) {
   const rules = db.listMailRules(message.accountId).filter((rule) => rule.enabled)
@@ -426,7 +485,7 @@ async function applyRulesToMessage(message) {
     if (!matchesMailRule(rule, message)) continue
     const targetFolder = rule.ruleType === "block" ? junk : folders.find((folder) => folder.id === rule.targetFolderId)
     if (!targetFolder || targetFolder.id === message.folderId) return message
-    await moveMailMessage({ messageId: message.id, targetFolderId: targetFolder.id })
+    await moveMailMessagesToFolder([message], targetFolder)
     return db.getMailMessage(message.id) || message
   }
   return message
@@ -440,14 +499,9 @@ async function applyRuleToExistingMessages(rule) {
   const targetFolder = rule.ruleType === "block" ? junk : folders.find((folder) => folder.id === rule.targetFolderId)
   if (!targetFolder) return 0
 
-  let movedCount = 0
   const candidates = db.listMailRuleCandidateMessages(rule.accountId)
-  for (const message of candidates) {
-    if (message.folderId === targetFolder.id || !matchesMailRule(rule, message)) continue
-    await moveMailMessage({ messageId: message.id, targetFolderId: targetFolder.id })
-    movedCount += 1
-  }
-  return movedCount
+  const matchedMessages = candidates.filter((message) => message.folderId !== targetFolder.id && matchesMailRule(rule, message))
+  return moveMailMessagesToFolder(matchedMessages, targetFolder)
 }
 
 // 同步单个文件夹：第一版拉取最近一段范围，保留游标表给后续增量扩展。
@@ -597,32 +651,38 @@ async function updateMailMessageState(input) {
 
 // 对外：移动邮件先推送远端 MOVE，成功后更新本地文件夹；失败时保留本地移动意图。
 async function moveMailMessage(input) {
-  let remoteMoved = false
+  const message = db.getMailMessage(input.messageId)
+  if (!message) throw new Error("邮件不存在")
+  const targetFolder = db.getMailFolder(input.targetFolderId)
   try {
-    await withMessageMailbox(input.messageId, async (client, message) => {
-      const targetFolder = db.getMailFolder(input.targetFolderId)
-      if (!targetFolder?.isRemote) throw new Error("目标远端文件夹不存在")
-      await client.messageMove(String(message.messageUid), targetFolder.path, { uid: true })
-    })
-    remoteMoved = true
+    await moveMailMessagesToFolder([message], targetFolder)
+    return db.updateMailMessageSyncResult(input.messageId, { ok: true })
   } catch (error) {
-    console.warn("[hora] move remote mail failed:", formatMailError(error))
+    const lastError = formatMailError(error)
+    console.warn("[hora] move remote mail failed:", lastError)
+    return db.updateMailMessageSyncResult(input.messageId, { ok: false, pendingAction: "move", lastError })
   }
-  const moved = db.moveMailMessage(input)
-  if (remoteMoved) return db.updateMailMessageSyncResult(input.messageId, { ok: true })
-  return moved
 }
 
 // 对外：删除邮件优先远端删除，随后清理本地缓存。
 async function deleteMailMessage(messageId) {
+  const message = db.getMailMessage(messageId)
+  if (!message) return true
+  if (!message.messageUid) {
+    // 没有远端 UID 的邮件不能安全定位到服务器消息，只清理本地缓存。
+    return db.deleteMailMessage(messageId)
+  }
   try {
     await withMessageMailbox(messageId, async (client, message) => {
       await client.messageDelete(String(message.messageUid), { uid: true })
     })
+    return db.deleteMailMessage(messageId)
   } catch (error) {
-    console.warn("[hora] delete remote mail failed:", formatMailError(error))
+    const lastError = formatMailError(error)
+    db.updateMailMessageSyncResult(messageId, { ok: false, pendingAction: "delete", lastError })
+    console.warn("[hora] delete remote mail failed:", lastError)
+    return false
   }
-  return db.deleteMailMessage(messageId)
 }
 
 // 对外：文件夹全部已读，先本地更新，再对远端文件夹批量加 \Seen。
@@ -690,10 +750,8 @@ async function blockMailSender(input) {
     targetFolderId: junk?.id || null,
     enabled: true,
   })
-  if (junk && message.folderId !== junk.id) {
-    await moveMailMessage({ messageId: message.id, targetFolderId: junk.id })
-  }
-  return rule
+  const appliedCount = junk ? await applyRuleToExistingMessages(rule) : 0
+  return { ...rule, appliedCount }
 }
 
 // 对外：同步账号。账号失败只更新该账号错误，不影响其他账号。
