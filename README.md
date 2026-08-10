@@ -1,228 +1,176 @@
 # HoraSpace
-HoraSpace 是一个面向项目、需求、任务和笔记协作的桌面应用，支持 Next.js 前端、Electron 桌面壳、SQLite 本地数据和品牌化安装包。
+
+HoraSpace 是一个面向项目、需求、任务和笔记协作的桌面应用，基于 **Next.js + Electron + SQLite**，支持 macOS 和 Windows。
 
 ## 快速开始
 
-先安装依赖：
+安装依赖：
 
 ```bash
 npm install
 ```
 
-`npm install` 会自动准备 `electron/` 目录的依赖，并在需要时重编译 `better-sqlite3`。
-
-如果你想手动再跑一次电子壳依赖准备，可以执行：
-
-```bash
-npm run setup
-```
-
-然后启动开发环境：
+启动桌面开发环境：
 
 ```bash
 npm run electron:dev
 ```
 
-这条命令会同时启动：
+如需手动重新准备 Electron 原生依赖：
 
-- Next.js 开发服务器
-- Electron 桌面窗口
+```bash
+npm run setup
+```
 
-## 常用脚本
+## 常用命令
 
-- `npm run dev`：仅启动 Next.js 开发服务
-- `npm run build`：构建生产版 Next.js 产物
-- `npm run start`：启动 Next.js 生产服务
-- `npm run electron:dev`：开发模式下启动桌面应用
-- `npm run electron:prod`：先构建，再用本地生产方式启动 Electron
-- `npm run dist`：按当前系统自动选择本机打包命令
-- `npm run dist:mac`：在 macOS 本机打包 macOS 安装包
-- `npm run dist:win:x64`：在 Windows 本机打包 Windows x64 安装包
-- `npm run dist:win:arm64`：在 Windows 本机打包 Windows arm64 安装包
-- `npm run dist:github:mac`：通过 GitHub Actions 远程打 macOS 安装包
-- `npm run dist:github:win`：通过 GitHub Actions 远程打 Windows 安装包
-- `npm run release:patch`：创建补丁版本发布提交和 tag
-- `npm run release:minor`：创建小版本发布提交和 tag
-- `npm run release:major`：创建大版本发布提交和 tag
+```bash
+npm run dev                 # 仅启动 Next.js
+npm run build               # 构建 Next.js
+npm run electron:dev        # Electron 开发模式
+npm run electron:prod       # 本地生产模式运行
 
-## 打包说明
+npm run dist                # 当前系统本机打包
+npm run dist:mac            # macOS 打包
+npm run dist:win:x64        # Windows x64 打包
+npm run dist:win:arm64      # Windows ARM64 打包
 
-桌面端打包会先执行 Next 构建，再准备 Electron 运行所需的 standalone 目录，最后交给 `electron-builder` 输出安装包。
+npm run dist:github:mac     # GitHub Actions 打 macOS 包
+npm run dist:github:win     # GitHub Actions 打 Windows 包
 
-### 打包方式选择
+npm run release:patch       # 补丁版本
+npm run release:minor       # 小版本
+npm run release:major       # 大版本
+```
 
-本项目包含原生依赖，所以推荐按目标系统打包，避免把错误平台的原生模块带进安装包：
+## 打包
 
-| 你当前的系统 | 本机可直接打包 | 如果要打另一个系统 |
-| --- | --- | --- |
-| macOS | `npm run dist` 或 `npm run dist:mac` | Windows 包用 `npm run dist:github:win` |
-| Windows | `npm run dist`、`npm run dist:win:x64` 或 `npm run dist:win:arm64` | macOS 包用 `npm run dist:github:mac` |
-| Linux | 暂不建议本机打包 | 用 `npm run dist:github:mac` / `npm run dist:github:win` |
+项目包含 `better-sqlite3` 等原生依赖，建议在目标系统上构建：
 
-如果你在不支持的平台执行了本机打包命令，脚本会主动中止，并提示你改用 GitHub Actions。
+| 当前系统    | 本机打包    | 跨平台打包                     |
+| ------- | ------- | ------------------------- |
+| macOS   | macOS   | Windows 使用 GitHub Actions |
+| Windows | Windows | macOS 使用 GitHub Actions   |
+| Linux   | 不推荐     | 使用 GitHub Actions         |
 
-### 输出目录
-
-所有发行物统一输出到：
+发行文件统一输出到：
 
 ```text
 dist-electron/releases/
 ```
 
-### 文件命名
-
-安装包文件名统一使用驼峰风格，并携带版本和架构，例如：
-
-- `HoraSpace-0.0.2-arm64.dmg`
-- `HoraSpace-0.0.2-x64.exe`
-
-### 图标资源
-
-品牌图标会同步复制到：
+安装包命名示例：
 
 ```text
-dist-electron/releases/icon/
+HoraSpace-0.0.2-arm64.dmg
+HoraSpace-0.0.2-x64.exe
+HoraSpace-0.0.2-arm64.exe
 ```
 
-同时，应用窗口、安装包、启动台、快捷方式和站点图标都会尽量统一到同一套品牌图标。
+## GitHub Actions
 
-## GitHub Actions 远程打包
-
-当本机不能打目标平台安装包时，可以用 GitHub Actions 远程打包。使用命令触发前，请先安装并登录 GitHub CLI：
+无法在本机打目标平台时：
 
 ```bash
 gh auth login
-```
 
-然后按目标平台运行：
-
-```bash
 npm run dist:github:mac
 npm run dist:github:win
 ```
 
-如果没有安装 `gh`，也可以手动打开 GitHub 仓库，进入 `Actions`，选择 `Build macOS` 或 `Build Windows`，再点击 `Run workflow`。
+也可以进入 GitHub 仓库：
 
-## 软件更新与正式发布
+```text
+Actions → Build macOS / Build Windows → Run workflow
+```
 
-HoraSpace 第一版更新机制只做“检查新版、展示简介、跳转下载”，不会自动下载或自动安装。应用内更新源固定为 GitHub Releases：
+Windows CI 会生成：
+
+```text
+hora-windows-x64
+hora-windows-arm64
+```
+
+macOS CI 会生成：
+
+```text
+hora-macos
+```
+
+对应工作流：
+
+```text
+.github/workflows/build-mac.yml
+.github/workflows/build-windows.yml
+```
+
+## 正式发布
+
+HoraSpace 使用 GitHub Releases 作为更新源：
 
 ```text
 https://github.com/hora35711/HoraSpace/releases
 ```
 
-正式版本只通过 `vX.Y.Z` tag 发布。发布补丁版本时可以执行：
+正式版本使用：
+
+```text
+vX.Y.Z
+```
+
+例如发布补丁版本：
 
 ```bash
 npm run release:patch
 git push origin main vX.Y.Z
 ```
 
-其中 `vX.Y.Z` 替换为脚本输出的 tag。推送 tag 后，`.github/workflows/release.yml` 会同时构建 Windows x64、Windows arm64 和 macOS dmg，并上传到同一个 GitHub Release。
+推送 tag 后，GitHub Actions 会构建：
 
-Release 正文会作为应用内“版本简介”的来源：第一段会显示在设置页，完整内容通过“前往下载”按钮在浏览器中查看。
+* Windows x64
+* Windows ARM64
+* macOS dmg
 
-自动下载、自动安装和重启安装能力目前只预留设置与接口位置，后续需要签名、公证和更完整的安装流程后再开启。
+并上传到同一个 GitHub Release。
 
-## 平台注意事项
-
-- macOS：ARM 虚拟机可直接使用 `arm64` 安装包
-- Windows：请在 Windows 机器或 Windows CI 上打包，避免原生模块架构不匹配
-- 当前仓库已经提供 macOS、Windows x64 和 Windows arm64 的 GitHub Actions 构建流程
-
-## macOS CI
-
-macOS 构建工作流位于：
+当前应用内更新仅支持：
 
 ```text
-.github/workflows/build-mac.yml
+检查新版 → 显示版本简介 → 跳转 GitHub 下载
 ```
 
-触发方式：
+暂不支持自动下载和自动安装。
 
-- 手动在 GitHub Actions 里运行 `Build macOS`
-- 或者在 `main` 分支 push 后自动执行
+## Windows 注意事项
 
-CI 会产出：
+macOS 上不要直接执行：
 
-- `hora-macos`
-
-## Windows CI
-
-Windows 构建工作流位于：
-
-```text
-.github/workflows/build-windows.yml
+```bash
+npm run dist:win:x64
+npm run dist:win:arm64
 ```
 
-触发方式：
-
-- 手动在 GitHub Actions 里运行 `Build Windows`
-- 或者在 `main` 分支 push 后自动执行
-
-CI 会同时产出：
-
-- `hora-windows-x64`
-- `hora-windows-arm64`
-
-## 在 Mac 上打 Windows 包
-
-Mac 上不要直接执行 Windows 本机打包命令。项目里有平台保护脚本，`npm run dist:win:x64` 和 `npm run dist:win:arm64` 在 macOS 上会主动中止，避免把 macOS 的原生模块带进 Windows 安装包。
-
-如果你在 macOS 上需要 Windows 安装包，直接运行：
+请使用：
 
 ```bash
 npm run dist:github:win
 ```
 
-也可以手动操作：
-
-1. 把当前代码推送到 GitHub 仓库
-2. 打开 GitHub 仓库页面
-3. 进入 `Actions`
-4. 选择 `Build Windows`
-5. 点击 `Run workflow`
-6. 等待两个任务完成
-7. 在 workflow 详情页下载构建产物
-
-下载后的产物包含：
-
-- `hora-windows-x64`：适合大多数 Intel / AMD Windows 电脑
-- `hora-windows-arm64`：适合 Windows ARM 设备
-
-如果你不确定虚拟机里的 Windows 架构，请在 Windows PowerShell 里运行：
-
-```powershell
-[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
-```
-
-输出 `X64` 就下载 `hora-windows-x64`，输出 `Arm64` 就下载 `hora-windows-arm64`。
-
-安装包内部文件名会保持统一格式：
+GitHub Actions 下载的 artifact 需要先解压，再运行其中的：
 
 ```text
-HoraSpace-0.0.2-x64.exe
-HoraSpace-0.0.2-arm64.exe
+HoraSpace-版本-架构.exe
 ```
 
-Windows 下载后，请先解压 GitHub Actions 下载的 artifact 压缩包，拿到里面的 `HoraSpace-版本-架构.exe` 安装器，然后在 Windows 上双击运行这个安装器。不要继续用 7-Zip、WinRAR 或系统解压工具去解压这个 `.exe`，它是安装程序，不是普通压缩包。
+`.exe` 是安装程序，不需要继续解压。
 
-安装完成后，安装器会创建桌面快捷方式和开始菜单快捷方式，名称为 `HoraSpace`，主程序文件名为 `HoraSpace.exe`，也可以在安装完成页面直接启动应用。
+默认安装目录通常为：
 
-Windows 安装器允许手动选择安装目录。建议优先使用默认目录或 Windows 本机磁盘目录，不要把程序安装到 Parallels 共享出来的 macOS 桌面目录。默认安装目录通常是 `C:\Users\你的用户名\AppData\Local\Programs\HoraSpace`。
-
-如果 Windows 提示“缺少快捷方式”或找不到 `HoraSpace.exe`，通常是旧版本快捷方式残留、安装器被当作压缩包解开，或安全软件隔离了主程序。请先删除旧的桌面快捷方式，必要时卸载旧版本后重新运行最新安装器。
-
-如果 Windows 安装后双击没有反应，请先直接运行主程序并查看日志：
-
-```powershell
-& "$env:LOCALAPPDATA\Programs\HoraSpace\HoraSpace.exe"
-notepad "$env:APPDATA\HoraSpace\logs\hora-main.log"
+```text
+C:\Users\用户名\AppData\Local\Programs\HoraSpace
 ```
 
-如果你安装到了自定义目录，请把第一条命令里的路径替换成实际的 `HoraSpace.exe` 路径。日志里通常会直接显示是原生模块、数据库初始化、端口占用还是渲染服务启动失败。
-
-正常安装后的 Windows 程序目录根部应该包含：
+正常安装后应包含：
 
 ```text
 HoraSpace.exe
@@ -231,25 +179,21 @@ resources/
 locales/
 ```
 
-## 在 Windows 上本地打包
+如果双击应用没有反应，可查看日志：
 
-如果你有 Windows 电脑或 Windows 虚拟机，可以在 Windows 里直接打包：
+```powershell
+& "$env:LOCALAPPDATA\Programs\HoraSpace\HoraSpace.exe"
 
-```bash
-npm install
-npm run dist:win:x64
-npm run dist:win:arm64
+notepad "$env:APPDATA\HoraSpace\logs\hora-main.log"
 ```
 
-本地打包脚本会先自动执行 `npm run setup`，把 Electron 运行时真正需要的原生依赖准备好；`electron-builder` 不再重编译根目录里的开发依赖，所以正常情况下不需要为了 `@parcel/watcher` 单独安装 Python。
-
-如果你在 Windows 上也遇到 `better-sqlite3` ABI 不匹配，直接再执行：
+如果 Windows 本地打包出现 `better-sqlite3` ABI 或依赖问题：
 
 ```bash
 npm run setup
 ```
 
-如果 Windows 上安装中断过，导致 `electron/node_modules` 里缺少 `electron.cmd`、`prebuild-install` 等文件，请先切换到 Node.js 20 LTS，再删除 `electron/node_modules` 后重新执行：
+严重情况下可删除 Electron 依赖后重新安装：
 
 ```powershell
 Remove-Item -Recurse -Force .\electron\node_modules
@@ -257,66 +201,57 @@ npm install --foreground-scripts --loglevel info
 npm run setup
 ```
 
-打包完成后，安装包会输出到：
+建议使用 **Node.js 20 LTS**。
 
-```text
-dist-electron/releases/
+## macOS 注意事项
+
+Windows 上不要直接执行：
+
+```bash
+npm run dist:mac
 ```
 
-## 在 Windows 上打 macOS 包
-
-Windows 上不要直接执行 macOS 本机打包命令。项目里有平台保护脚本，`npm run dist:mac` 在 Windows 上会主动中止。
-
-如果你在 Windows 上需要 macOS 安装包，直接运行：
+请使用：
 
 ```bash
 npm run dist:github:mac
 ```
 
-也可以手动打开 GitHub 仓库，进入 `Actions`，选择 `Build macOS`，点击 `Run workflow` 后下载 `hora-macos` artifact。
+Apple Silicon / ARM 环境优先使用 `arm64` 安装包。
 
-## 目录约定
+## 项目目录
 
-- `app/`：Next.js App Router 页面和前端界面
-- `electron/`：Electron 主进程、预加载脚本、本地数据库和空间管理逻辑
-- `icon/`：品牌图标源文件
-- `scripts/`：打包前后处理脚本
-- `dist-electron/`：打包产物输出目录
+```text
+app/            Next.js 页面和前端
+electron/       Electron 主进程、数据库和本地逻辑
+icon/           品牌图标
+scripts/        构建与发布脚本
+dist-electron/  打包产物
+```
 
-## 本地开发提醒
+## 开发提醒
 
-- 如果你在开发时修改了 Electron 相关逻辑，建议重新运行 `npm run electron:dev`
-- 如果你在修改打包逻辑，建议重新执行 `npm run dist:mac` 或对应 Windows 构建脚本验证产物
-- 如果安装包出现白屏，优先检查 Electron 主进程日志和 `standalone` 是否完整拷贝
+修改 Electron 主进程代码后，建议重新运行：
 
-## 许可证
+```bash
+npm run electron:dev
+```
 
-本项目当前使用 MIT License，详见根目录 `LICENSE`。
+修改打包配置后，应重新执行对应平台打包命令验证。
 
-## 开源许可证说明
+如果安装包出现白屏，优先检查：
 
-本项目依赖了多个开源项目。根据当前 `package.json`、`electron/package.json` 和本地依赖扫描结果，直接依赖主要是宽松许可证：
+```text
+Electron 主进程日志
+Next standalone 构建产物
+原生模块架构
+端口占用
+```
 
-- MIT：React、Next.js、Electron、Radix UI、Tiptap、Excalidraw、Tailwind 相关工具、date-fns、Recharts 等
-- Apache-2.0：TypeScript、class-variance-authority 等
-- ISC：lucide-react 等
+## License
 
-这些许可证通常允许商用、修改、分发和闭源发布，但发布软件时应保留对应开源项目的版权声明和许可证文本。
+HoraSpace 使用 **MIT License**。
 
-需要额外注意的传递依赖：
+项目依赖 React、Next.js、Electron、Tiptap、Radix UI、Excalidraw 等开源项目。正式发布时应保留相应许可证和版权声明。
 
-- `@img/sharp-libvips-darwin-arm64`：LGPL-3.0-or-later
-- `lightningcss` / `lightningcss-darwin-arm64`：MPL-2.0
-- `axe-core`：MPL-2.0
-- `dompurify`：MPL-2.0 OR Apache-2.0
-- `caniuse-lite`：CC-BY-4.0
-
-发布安装包时建议：
-
-- 保留根目录 `LICENSE`
-- 不要删除 Electron 打包产物里的 `LICENSE.electron.txt` 和 `LICENSES.chromium.html`
-- 如正式对外分发，建议生成并随安装包附带第三方开源许可证清单
-- 如果修改了 MPL 许可证覆盖的源码文件，需要按 MPL 要求公开对应修改文件
-- 如果分发包含 LGPL 组件的二进制产物，需要保留许可证声明，并确保满足 LGPL 对替换、重新链接或获取相关组件源码的要求
-
-以上内容是工程侧合规提示，不构成法律意见。正式商用发布前，建议再使用许可证扫描工具生成完整第三方 notice 文件。
+部分传递依赖可能涉及 MPL、LGPL、CC-BY 等许可证。正式商用发布前，建议生成完整的第三方开源许可证和 NOTICE 清单。
